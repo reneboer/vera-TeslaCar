@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<!-- 
+	Vera/openLuup "TeslaCar" Plug-in 
+	
+	Written by Rene Boer
+	
+	V1.0 10 November 2019
+	
+-->
+<implementation>
+	<settings>
+		<protocol>crlf</protocol>
+	</settings>
+	<files>L_TeslaCar1.lua</files>  
+	<startup>TeslaCarModule_Initialize</startup>
+	<actionList>
+		<action>
+			<name>flashLights</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('flashLights')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>honkHorn</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('honkHorn')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>lockDoors</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('lockDoors')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>unlockDoors</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('unlockDoors')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>unlockFrunc</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('unlockFrunc')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>unlockTrunc</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('unlockTrunc')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>openChargePort</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('openChargePort')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>closeChargePort</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('closeChargePort')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>startCharge</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('startCharge')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>stopCharge</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('stopCharge')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>startClimate</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('startClimate')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>stopClimate</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('stopClimate')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>Reset</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<run>
+				CarModule.Reset()
+				return 4, nil
+			</run>
+		</action>
+		<action>
+			<name>Login</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.Login()
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>Poll</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.Poll()
+				return 4, nil
+			</job>
+		</action>
+	</actionList>
+</implementation>

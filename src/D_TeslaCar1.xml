@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!-- 
+ openLuup "TeslaCar" Plugin
+
+ Copyright (C) 2019  Rene Boer
+
+ V1.0 24/11/2019
+ 
+-->
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+	<specVersion>
+		<major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	<device>
+		<deviceType>urn:schemas-rboer-com:device:TeslaCar:1</deviceType>
+		<handleChildren>1</handleChildren>
+		<friendlyName>TeslaCar Plugin</friendlyName>
+		<manufacturer>Rene Boer</manufacturer>
+		<manufacturerURL>https://github.com/reneboer/</manufacturerURL>
+		<modelDescription>Tesla Car Plug-in</modelDescription>
+		<modelName>Tesla Car Model</modelName>
+		<modelNumber>1.0</modelNumber>
+		<staticJson>D_TeslaCar1.json</staticJson>
+		<serviceList>
+			<service>
+				<serviceType>urn:schemas-rboer-com:serviceId:TeslaCar:1</serviceType>
+				<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+				<SCPDURL>S_TeslaCar1.xml</SCPDURL>
+			</service>
+		</serviceList>
+		<implementationList>
+			<implementationFile>I_TeslaCar1.xml</implementationFile>
+		</implementationList>
+	</device>
+</root>

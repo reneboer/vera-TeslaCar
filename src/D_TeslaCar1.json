@@ -1,0 +1,316 @@
+{
+    "default_icon": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar.png",
+    "inScene": 1,
+    "ToggleButton": 1,
+	"state_icons": [{
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 0
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Connected.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 1
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Charge.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 2
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Climate.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 3
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Unlocked.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 4
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Trunk.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 5
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Frunk.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 6
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Doors.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 7
+		}]
+	}],
+    "Tabs":[
+        {
+            "Label":{
+                "lang_tag":"ui7_tab_control",
+                "text":"Control"
+            },
+            "Position": 0,
+            "TabType": "flash",
+			"TopNavigationTab": 1,
+			"top_navigation_tab": 1,
+            "SceneGroup":[
+                {
+					"id": 1,
+					"top": 2,
+					"left": 0,
+					"x": 2,
+					"y": 1
+                }
+            ],          
+            "ControlGroup":[
+                {
+                    "id": 1,
+                    "scenegroup": 1,
+                    "isSingle":1
+                }
+            ],
+            "Control":[
+				{
+					"ControlGroup": 1,
+					"ControlType": "label",
+					"top": 1,
+					"left": 1,
+					"text_align": "left",
+					"Label": {
+						"text": "Charging" 
+					},
+					"Display": {
+						"Top": 13,
+						"Left": 1,
+						"Width": 50,
+						"Height": 20 
+					} 
+				},
+                {
+                    "ControlGroup": 1,
+                    "ControlType": "multi_state_button",
+					"top": 1,
+					"left": 2,
+					"Display": {
+						"Top": 5,
+						"Left": 80
+					},
+					"states": [
+						{
+							"Label": {
+								"text": "On"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "ChargeStatus",
+								"Value": "1"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "startCharge",
+								"Parameters": [ ]
+							},
+							"ControlCode": "charging_on"
+						},
+						{
+							"Label": {
+								"text": "Off"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "ChargeStatus",
+								"Value": "0"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "stopCharge",
+								"Parameters": [ ]
+							},
+							"ControlCode": "charging_off"
+                        }
+					]	
+                },
+				{
+					"ControlGroup": 1,
+					"ControlType": "variable",
+					"top": 1,
+					"left": 3,
+					"text_align": "right",
+					"Display": {
+						"Service": "urn:rboer-com:serviceId:TeslaCar1",
+						"Variable": "ChargeMessage",
+						"Top": 13,
+						"Left": 180,
+						"Width": 55,
+						"Height": 20 
+					} 
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "line_break"
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "label",
+					"top": 1,
+					"left": 1,
+					"text_align": "left",
+					"Label": {
+						"text": "Climate" 
+					},
+					"Display": {
+						"Top": 63,
+						"Left": 1,
+						"Width": 50,
+						"Height": 20 
+					} 
+				},
+                {
+                    "ControlGroup": 1,
+                    "ControlType": "multi_state_button",
+					"top": 1,
+					"left": 2,
+					"Display": {
+						"Top": 55,
+						"Left": 80
+					},
+					"states": [
+						{
+							"Label": {
+								"text": "On"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "ClimateStatus",
+								"Value": "1"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "startClimate",
+								"Parameters": [ ]
+							},
+							"ControlCode": "climate_on"
+						},
+						{
+							"Label": {
+								"text": "Off"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "ClimateStatus",
+								"Value": "0"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "stopClimate",
+								"Parameters": [ ]
+							},
+							"ControlCode": "climate_off"
+                        }
+					]	
+                },
+				{
+					"ControlGroup": 1,
+					"ControlType":"variable",
+					"top": 1,
+					"left": 3,
+					"text_align": "right",
+					"Display": {
+						"Service": "urn:rboer-com:serviceId:TeslaCar1",
+						"Variable": "ClimateMessage",
+						"Top": 63,
+						"Left": 180,
+						"Width": 55,
+						"Height": 20 
+					} 
+				}
+			]
+		},
+		{
+			"Label": {
+                "lang_tag": "status",
+                "text": "Status"
+            },
+            "Position": "1",
+            "TopNavigationTab": "1",
+            "TabType": "javascript",
+            "ScriptName": "J_TeslaCar1.js",
+            "Function": "TeslaCar.showStatus"
+		},        
+		{
+			"Label": {
+                "lang_tag": "settings",
+                "text": "Settings"
+            },
+            "Position": "2",
+            "TopNavigationTab": "1",
+            "TabType": "javascript",
+            "ScriptName": "J_TeslaCar1.js",
+            "Function": "TeslaCar.showSettings"
+		},        
+        {
+            "Label":{
+                "lang_tag":"advanced",
+                "text":"Advanced"
+            },
+            "Position":"3",
+            "TabType":"javascript",
+            "ScriptName":"shared.js",
+            "Function":"advanced_device"
+        },
+        {
+            "Label":{
+                "lang_tag":"logs",
+                "text":"Logs"
+            },
+            "Position":"4",
+            "TabType":"javascript",
+            "ScriptName":"shared.js",
+            "Function":"device_logs"
+        },
+        {
+            "Label":{
+                "lang_tag":"notifications",
+                "text":"Notifications"
+            },
+            "Position":"5",
+            "TabType":"javascript",
+            "ScriptName":"shared.js",
+            "Function":"device_notifications"
+        }
+        
+    ],
+    "eventList2":[
+        
+    ],
+    "device_type":"urn:schemas-rboer-com:device:TeslaCar:1"
+}
+
