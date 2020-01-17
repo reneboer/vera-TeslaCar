@@ -2,12 +2,15 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.0, 10 November 2019
+	V1.0, 16 January 2020
 	
-	A valid Tesla registration is required.
+	A valid Tesla account registration is required.
 	
-	All logic still needs to be changed from WE Connect to Tesla portal.
-	
+	To-do
+		1) correct message logic
+		2) Vera Event Triggers
+		3) child devices for locked, doors, windows, charging status.
+
 	https://www.teslaapi.io/
 	https://tesla-api.timdorr.com/
 	https://github.com/timdorr/tesla-api
@@ -17,6 +20,7 @@
 	https://support.teslafi.com/knowledge-bases/2/articles/640-enabling-sleep-settings-to-limit-vampire-loss
 	https://github.com/dirkvm/teslams
 	https://github.com/zabuldon/teslajsonpy/tree/master/teslajsonpy
+	
 	
 	
 ]]
@@ -74,6 +78,7 @@ local messageMap = {
 -- Maps to icons definition in D_TeslaCar1.json for IconSet variable.
 local ICONS = {
 	IDLE = 0,
+	ASLEEP = 10,
 	CONNECTED = 1,
 	CHARGING = 2,
 	CLIMATE = 3,
@@ -335,6 +340,7 @@ local function TeslaCarAPI()
 		["startCharge"] 			= { method = "POST", url ="/command/charge_start" },
 		["stopCharge"] 				= { method = "POST", url ="/command/charge_stop" },
 		["startClimate"] 			= { method = "POST", url ="/command/auto_conditioning_start" },
+		["stopClimate"] 			= { method = "POST", url ="/command/auto_conditioning_stop" },
 		["unlockDoors"] 			= { method = "POST", url ="/command/door_unlock" },
 		["lockDoors"] 				= { method = "POST", url ="/command/door_lock" },
 		["honkHorn"] 				= { method = "POST", url ="/command/honk_horn" },
@@ -386,15 +392,15 @@ local function TeslaCarAPI()
 	local function HttpsRequest(mthd, strURL, ReqHdrs, PostData)
 		local result = {}
 		local request_body = nil
-log.Debug("HttpsRequest 1 %s", strURL)		
+--log.Debug("HttpsRequest 1 %s", strURL)		
 		if PostData then
 			-- We pass JSONs in all cases
 			ReqHdrs["content-type"] = "application/json; charset=UTF-8"
 			request_body=json.encode(PostData)
 			ReqHdrs["content-length"] = string.len(request_body)
-log.Debug("HttpsRequest 2 body: %s",request_body)		
+--log.Debug("HttpsRequest 2 body: %s",request_body)		
 		else	
-log.Debug("HttpsRequest 2, no body ")		
+--log.Debug("HttpsRequest 2, no body ")		
 			ReqHdrs["content-length"] = "0"
 		end 
 		http.TIMEOUT = 15 
@@ -405,11 +411,11 @@ log.Debug("HttpsRequest 2, no body ")
 			source = ltn12.source.string(request_body),
 			headers = ReqHdrs
 		}
-log.Debug("HttpsRequest 3 %d", cde)		
+--log.Debug("HttpsRequest 3 %d", cde)		
 		if cde ~= 200 then
 			return false, nil, cde
 		else
-log.Debug("HttpsRequest 4 %s", table.concat(result))		
+--log.Debug("HttpsRequest 4 %s", table.concat(result))		
 			return true, json.decode(table.concat(result)), cde
 		end
 	end	
@@ -461,22 +467,24 @@ log.Debug("HttpsRequest 4 %s", table.concat(result))
 			local res, reply, cde = HttpsRequest(cmd.method, base_url .. cmd.url , request_header )
 			if res then
 				if reply.count then
-log.Debug("GetVehicle got %d cars.", reply.count)				
+--log.Debug("GetVehicle got %d cars.", reply.count)				
 					if reply.count > 0 then
-						-- See if we can find specific vin to support mutliple vehicles.
-						if vin and vin ~= "" then
-							for i = 1, reply.count do
-								if reply.response[i].vin == vin then
-									idx = i
-									break
-								end	
+						if reply.count > 1 then
+							-- See if we can find specific vin to support mutliple vehicles.
+							if vin and vin ~= "" then
+								for i = 1, reply.count do
+									if reply.response[i].vin == vin then
+										idx = i
+										break
+									end	
+								end
 							end
-						end
-log.Debug("will use car #%d.",idx)						
+						end	
+--log.Debug("will use car #%d.",idx)						
 						vehicle_data = reply.response[idx]
 						-- Set the corect URL for vehicle requests
 						vehicle_url = base_url .. "/api/1/vehicles/" .. vehicle_data.id_s
-log.Debug("URL to use %s",vehicle_url)						
+--log.Debug("URL to use %s",vehicle_url)						
 						return true, vehicle_data, "OK"
 					else
 						return false, 404, "No vehicles found."
@@ -497,10 +505,8 @@ log.Debug("URL to use %s",vehicle_url)
 		local res, data, msg = _get_vehicle()
 		if res then
 			-- Return true is online.
-log.Debug("Check awake status :%s",data.state)
 			return true, data.state=="online", "OK"
 		else
-log.Error("Failed to check awake status: %s",msg)		
 			return res, data, msg
 		end
 	end
@@ -698,7 +704,7 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 		end
 	end
 	
-	-- We got that no vehecles where on the account. Recheck, then wake up.
+	-- We got that no vehicles where on the account. Recheck, then wake up.
 	local function TSC_recheck_vehicle(param)
 		local cnt = tonumber(param) - 1
 		if cnt > 0 then
@@ -756,6 +762,7 @@ end
 
 -- Interface of the module
 function TeslaCarModule()
+	local readyToPoll = false
 
 	-- Set best status message
 	local function _set_status_message(proposed)
@@ -807,6 +814,7 @@ function TeslaCarModule()
 
 	-- Logoff, This will fore a new login
 	local function _reset()
+		readyToPoll = false
 		TeslaCar.Logoff()
 		return 200, "OK"
 	end
@@ -815,15 +823,15 @@ function TeslaCarModule()
 		-- Get login details
 		local email = var.Get("Email")
 		local password = var.Get("Password")
-		-- If VIN is set look for car with that VIN, else use first found in reponse.
+		-- If VIN is set look for car with that VIN, else first found is used.
 		local vin = var.Get("VIN")
 		if email ~= "" and password ~= "" then
-			TeslaCar.Initialize(email, password, vin)
 			local res, reply, msg = TeslaCar.Authenticate()
 			if res then
 				var.Set("LastLogin", os.time())
 				res, reply, msg = TeslaCar.GetVehicle()
 				if res then
+					readyToPoll = true
 					return 200, msg
 				else	
 					log.Error("Unable to select vehicle. errorCode : %s, errorMessage : %s", reply, msg)
@@ -949,6 +957,16 @@ function TeslaCarModule()
 			icon = ICONS.UNLOCKED
 		else	
 			var.Set("LockedMessage", "Locked")
+		end
+		local swStat = var.GetNumber("SoftwareStatus")
+		if swStat == 0 then
+			var.Set("SoftwareMessage", "Current version : ".. var.Get("CarFirmwareVersion"))
+		elseif swStat == 1 then
+			var.Set("SoftwareMessage", "Downloading version : ".. var.Get("AvailableSoftwareVersion"))
+		elseif swStat == 2 then
+			var.Set("SoftwareMessage", "Version ".. var.Get("AvailableSoftwareVersion").. " ready for installation.")
+		elseif swStat == 3 then
+			var.Set("SoftwareMessage", "Installing version : ".. var.Get("AvailableSoftwareVersion"))
 		end
 		var.Set("LastCarMessageTimestamp", os.time())
 		var.Set("IconSet",icon)
@@ -1240,10 +1258,15 @@ function TeslaCarModule()
 			"sentry_mode_available": true,
 			"software_update": {
 				"download_perc": 0,
+				"download_perc": 100,
 				"expected_duration_sec": 2700,
 				"install_perc": 1,
+				"install_perc": 10,
 				"status": "",
+				"status": "available",
+				"status": "installing",
 				"version": ""
+				"version": "2019.40.50.5"
 			},
 			"speed_limit_mode": {
 				"active": false,
@@ -1271,7 +1294,29 @@ function TeslaCarModule()
 			var.Set("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
 			if var.GetNumber("CarHasSunRoof") ~= 0 and state.sun_roof_state then 
 				var.Set("SunroofStatus",state.sun_roof_state)
-			end		
+			end	
+			-- Check for software update status
+			if state.software_update then
+				local swStat = 0
+				local swu = state.software_update
+				if swu.status == "" then
+					-- no thing to do.
+				elseif swu.status == "available" then
+					if swu.download_perc == 100 then
+						swStat = 2
+					else
+						swStat = 1
+					end
+				elseif swu.status == "installing" then
+					swStat = 3
+				end
+				if swu.version and swu.version ~= "" then
+					var.Set("AvailableSoftwareVersion", swu.version)
+				else
+					var.Set("AvailableSoftwareVersion", "")
+				end
+				var.Set("SoftwareStatus", swStat)
+			end
 		end
 	end
 
@@ -1352,7 +1397,8 @@ function TeslaCarModule()
 		
 		if not force then
 			-- Only poll if car is awake
-			if var.GetNumber("CarAwake") == 0 then
+			if var.GetNumber("CarIsAwake") == 0 then
+				var.Set("IconSet",ICONS.ASLEEP)
 				log.Debug("CarModule.UpdateCarStatus, skipping, Tesla is asleep.")
 				return false, "Car is asleep"
 			end
@@ -1368,6 +1414,20 @@ function TeslaCarModule()
 		end
 		return res, msg
 	end	
+
+	-- Send the requested command
+	local function _start_action(request)
+		log.Debug("Start Action enter for command %s.", request)
+		_set_status_message("Sending command "..request)
+		local res, data, msg = TeslaCar.SendCommandAsync(request,CM_CBS_Success,CM_CBS_Error)
+		if res then
+			log.Debug("Start Action Async result : %s, %s", data, msg)
+		else
+			log.Error("Start Action Async failed : %s, %s", data, msg)
+			_set_status_message()
+		end
+
+	end	
 	
 	-- Trigger a forced update of the car status. Will wake up car.
 	function _poll()
@@ -1378,11 +1438,12 @@ function TeslaCarModule()
 	-- Execute daily poll if scheduled
 	local function _daily_poll(startup)
 		local sg = string.gsub
+		local startup = startup or false
 
 		log.Debug("Daily Poll, enter")
 		-- Schedule at next day if a time is configured
 		local poll_time = var.Get("DailyPollTime")
-		if poll_time ~= "" then
+		if poll_time ~= "" and readyToPoll then
 			log.Debug("Daily Poll, scheduling for %s.", poll_time)
 			luup.call_timer("_daily_poll", 2, poll_time, "1,2,3,4,5,6,7")
 			if not startup then
@@ -1402,82 +1463,81 @@ function TeslaCarModule()
 		end
 	end
 	
-	-- Keep track if car is awake or not.
-	local function _monitor_awake_state(startup)
-		log.Debug("Monitor awake state, enter")
-		local interval = var.GetNumber("MonitorAwakeInterval")
-		if interval > 0 then
-			if not startup then
-				local res, cde, msg = TeslaCar.GetVehicleAwakeStatus()
-				if res then
-					if cde then
-						var.Set("CarAwake", 1)
-						log.Debug("Monitor awake state, Car is awake")
-					else
-						var.Set("CarAwake", 0)
-						log.Debug("Monitor awake state, Car is asleep")
-					end	
-				else	
-					log.Debug("Monitor awake state, failed %s %s", cde, msg)
-				end
-			end	
-			log.Debug("Monitor awake state, scheduling next in %s seconds.", interval)
-			luup.call_delay("_monitor_awake_state", interval)
-		else
-			log.Debug("Monitor awake state, not enabled.")
-		end
-	end
-	
 	-- Calculates polls based on car status
-	-- Adviced polling:
+	-- Advised polling:
 	--	* Standard status polling no more then once per 15 minutes for idle car so it can go asleep
-	--	* When asleep, check for that status as often as you like, eg every five minutes.
+	--	* When asleep, check for that status as often as you like, e.g. every five minutes.
 	--	* When charging it can go to sleep, but you may want to poll more frequently depending on remining charge time. E.g. 
 	--		- if 10 hrs left, poll once per hour, if less than an hour, poll every five minutes (car will not go asleep).
 	--	* For other activities like heating, poll every minute or so.
 	local function _scheduled_poll(startup)
 		local sg = string.gsub
-		log.Debug("Scheduled Poll, enter")
-		local interval = 0
-		-- PollSettings [2] = Poll interval if car is awake
-		-- PollSettings [3] = Poll interval if charging and remaining charge time > 1 hour
-		-- PollSettings [4] = Poll interval if charging and remaining charge time < 1 hour
-		-- PollSettings [5] = Poll interval when activity occurs (Preheat)
-		local pol = var.Get("PollSettings")
-		local pol_t = {}
-		sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-		if var.GetNumber("LockedStatus") == 0 or var.GetNumber("ClimateStatus") == 1 then
-			interval = pol_t[5]
-		elseif var.GetNumber("CarAwake") == 1 then
-			interval = pol_t[2]
-		elseif var.GetNumber("ChargeStatus") == 1 then
-			if var.GetNumber("RemainingChargeTime") > 1 then
-				interval = pol_t[3]
-			else
-				interval = pol_t[4]
+		if readyToPoll then
+			log.Debug("Scheduled Poll, enter")
+			local interval, awake = 0, 0
+			local force = startup or false
+			local lastPollInt = os.time() - var.GetNumber("LastCarMessageTimestamp")
+			local prevAwake = var.GetNumber("CarIsAwake")
+			local swStat = var.GetNumber("SoftwareStatus")
+			local lckStat = var.GetNumber("LockedStatus")
+			local clmStat = var.GetNumber("ClimateStatus")
+			local res, cde, msg = TeslaCar.GetVehicleAwakeStatus()
+			if res then
+				if cde then
+					var.Set("CarIsAwake", 1)
+					awake = 1
+					if prevAwake == 0 then
+						log.Debug("Monitor awake state, Car woke up")
+					else
+						log.Debug("Monitor awake state, Car is awake")
+					end
+				else
+					var.Set("CarIsAwake", 0)
+					log.Debug("Monitor awake state, Car is asleep")
+				end	
+			else	
+				log.Debug("Monitor awake state, failed %s %s", cde, msg)
 			end
-		end
-		interval = interval * 60  -- Minutes to seconds
-		if interval == 0 then interval = 15*60 end
-		if startup then interval = 15 end	
-		log.Debug("Next Scheduled Poll in %s seconds.", interval)
-		luup.call_delay("_scheduled_poll", interval)
-		_update_car_status(startup)
-	end
-
-	-- Send the requested command
-	local function _start_action(request)
-		log.Debug("Start Action enter for command %s.", request)
-		_set_status_message("Sending command "..request)
-		local res, data, msg = TeslaCar.SendCommandAsync(request,CM_CBS_Success,CM_CBS_Error)
-		if res then
-			log.Debug("Start Action Async result : %s, %s", data, msg)
+			-- PollSettings [2] = Poll interval if car is awake
+			-- PollSettings [3] = Poll interval if charging and remaining charge time > 1 hour
+			-- PollSettings [4] = Poll interval if charging and remaining charge time < 1 hour
+			-- PollSettings [5] = Poll interval when car just woke up not by our action or activity occurs (Unlocked, Preheat, SW install)
+			local pol = var.Get("PollSettings")
+			local pol_t = {}
+			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
+			if (awake == 1 and prevAwake == 0 and lastPollInt > 1100) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
+				interval = pol_t[5]
+				force = true
+			elseif var.GetNumber("ChargeStatus") == 1 then
+				force = true
+				if var.GetNumber("RemainingChargeTime") > 1 then
+					interval = pol_t[3]
+				else
+					interval = pol_t[4]
+				end
+			elseif awake == 1 then
+				interval = pol_t[2]
+			end
+			interval = interval * 60  -- Minutes to seconds
+			if interval == 0 then interval = 15*60 end
+			log.Debug("Next Scheduled Poll in %s seconds, last poll %s seconds ago, forced is %s.", interval, lastPollInt, tostring(force))
+			luup.call_delay("_scheduled_poll", 60)
+			-- See if we passed poll interval.
+			if interval <= lastPollInt and readyToPoll then
+				-- Get latest status from car.
+				_update_car_status(force)
+			end
+			-- If we have software ready to install and auto install is on, send command to install
+			if swStat == 1 then
+				if var.GetNumber("AutoSoftwareInstall") == 1 then
+					_start_action("updateSoftware")
+				end
+			end
 		else
-			log.Error("Start Action Async failed : %s, %s", data, msg)
-			_set_status_message()
+			log.Warning("Scheduled Poll, not yet ready to poll.")
+			luup.call_delay("_scheduled_poll", 60)
 		end
-
-	end	
+	end
 
 	-- Initialize module
 	local function _init()
@@ -1487,7 +1547,7 @@ function TeslaCarModule()
 		var.Default("Email")
 --		var.Default("Password") store in attribute
 		var.Default("LogLevel", pD.LogLevel)
-		var.Default("PollSettings", "1,15,60,5,1") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active in minutes
+		var.Default("PollSettings", "1,20,60,5,1") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active in minutes
 		var.Default("DailyPollTime","7:30")
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)
@@ -1499,23 +1559,23 @@ function TeslaCarModule()
 		var.Default("ChargeMessage")
 		var.Default("ClimateMessage")
 		var.Default("WindowMeltMessage")
-		var.Default("DoorsStatus",0)
-		var.Default("LocksStatus",0)
-		var.Default("WindowsStatus",0)
-		var.Default("SunroofStatus",0)
-		var.Default("LightsStatus",0)
-		var.Default("TrunkStatus",0)
-		var.Default("FrunkStatus",0)
---		var.Default("ChargePortStatus",0)
+		var.Default("DoorsStatus", 0)
+		var.Default("LocksStatus", 0)
+		var.Default("WindowsStatus", 0)
+		var.Default("SunroofStatus", 0)
+		var.Default("LightsStatus", 0)
+		var.Default("TrunkStatus", 0)
+		var.Default("FrunkStatus", 0)
+		var.Default("SoftwareStatus", 0)
+--		var.Default("ChargePortStatus", 0)
 		var.Default("PowerSupplyConnected", 0)
 		var.Default("Mileage")
 --		var.Default("ActionRetries", "0")
---		var.Default("FastPollLocations")
+		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
 		var.Default("IconSet",0)
 		
 		_G._daily_poll = _daily_poll
-		_G._monitor_awake_state = _monitor_awake_state
 		_G._scheduled_poll = _scheduled_poll
 		
 		local email = var.Get("Email")
@@ -1535,9 +1595,7 @@ function TeslaCarModule()
 		Login = _login,
 		Poll = _poll,
 		DailyPoll = _daily_poll,
-		MonitorAwakeState = _monitor_awake_state,
 		ScheduledPoll = _scheduled_poll,
-		Command = _command,
 		StartAction = _start_action,
 		UpdateCarStatus = _update_car_status,
 		SetStatusMessage = _set_status_message,
@@ -1545,7 +1603,9 @@ function TeslaCarModule()
 	}
 end
 
--- Global functions used by call backs
+-- Handle changes in some key configuration variables.
+-- Change in log level.
+-- Changes in email or password for Telsa account.
 function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_value_old, lul_value_new)
 	local strNewVal = (lul_value_new or "")
 	local strOldVal = (lul_value_old or "")
@@ -1553,9 +1613,22 @@ function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_val
 	local lDevID = tonumber(lul_device or "0")
 	log.Log("TeslaCar_VariableChanged Device " .. lDevID .. " " .. strVariable .. " changed from " .. strOldVal .. " to " .. strNewVal .. ".")
 
-	if (strVariable == "Email") or (strVariable == "Password") or (strVariable == "VIN") then
---		log.Debug("resetting TeslaCar...")
---		CarModule.Reset()
+	if (strVariable == "VIN") then
+	elseif (strVariable == "Email") then
+		log.Debug("resetting TeslaCar connection...")
+		CarModule.Reset()
+		local pwd = var.Get("Password")
+		if strVariable ~= "" and pwd ~= "" then
+			CarModule.Logon()
+		end
+	elseif (strVariable == "Password") then
+		log.Debug("resetting TeslaCar connection...")
+		CarModule.Reset()
+		local em = var.Get("Email")
+		if strVariable ~= "" and em ~= "" then
+			log.Debug("resetting TeslaCar connection...")
+			CarModule.Logon()
+		end
 	elseif (strVariable == "LogLevel") then	
 		-- Set log level and debug flag if needed
 		local lev = tonumber(strNewVal, 10) or 3
@@ -1563,189 +1636,6 @@ function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_val
 	end
 end
 
--- Global routine for polling action status after it got successfully started
--- The Notification seems to have the option of multiple requests being in queued status, so we must poll until all are handled.
-function TeslaCar_StartAction(request)
-	log.Debug("TeslaCar_StartAction, enter for " .. request)
---[[
-	-- Handle one notification. If status is still Queued, schedule next getNotification
-	local function processNotification(nt, nnt, np)
-		if nt then
-			if nt.actionState == "SUCCEEDED" or nt.actionState == "SUCCEEDED_DELAYED" then
-				local ts = actionTypeMap[nt.actionType]
-				if ts then
-					local as = actionStateMap[ts]
-					if as then
-						var.Set(as.var.."Status", as.succeed)
-						var.Set(as.var.."Message", "Succeeded.")
-						var.Set("StatusText","Start Action, "..as.msg.." succeeded.")
-						CarModule.SetStatusMessage()
-						-- Request eManager status if required
-						TeslaCar_PollEManager()
-					else
-						log.Debug("Request "..ts.." not defined in actionStateMap.")
-					end
-				else
-					log.Debug("actionType "..nt.actionType.." not defined in actionTypeMap.")
-				end
-				pD.PendingAction = ""
-				pD.RetryCount = 0
-			elseif nt.actionState == "FAILED" or nt.actionState == "FAILED_DELAYED" then
-				local ts = actionTypeMap[nt.actionType]
-				local retry = nil
-				if ts then
-					local as = actionStateMap[ts]
-					if as then
-						CarModule.SetStatusMessage("Last action failed")
-						var.Set(as.var.."Status", as.failed)
-						var.Set(as.var.."Message", "Failed: "..nt.errorTitle)
-						var.Set("StatusText","Start Action, "..as.msg.." failed.")
-					else
-						log.Debug("Request "..ts.." not defined in actionStateMap.")
-					end
-					-- See if we should retry the action
-					retry = var.GetNumber("ActionRetries")
-					if pD.RetryCount < retry then
-						luup.call_delay("TeslaCar_StartAction", pD.RetryDelay, pD.PendingAction)
-						pD.RetryCount =  pD.RetryCount + 1
-						CarModule.SetStatusMessage("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-						log.Debug("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-					else
-						retry = nil
-					end
-				else
-					log.Debug("actionType "..nt.actionType.." not defined in actionTypeMap.")
-				end
-				if retry == nil then 
-					pD.PendingAction = "" 
-					pD.RetryCount = 0
-				end
-			else	
-				-- Action(s) have not yet completed, schedule next poll. Do more frequent if we have more actions pending.
-				local pt = (((nnt == 1) and pD.PollDelay) or math.floor(pD.PollDelay/2))
-				luup.call_delay("TeslaCar_StartAction", pt, "poll"..np)
-				log.Debug("TeslaCar_StartAction - starting poll...")
-			end
-			return true
-		else
-			log.Debug("TeslaCar_StartAction - Missing notification object.")
-			return false
-		end
-	end
-	
-	-- See if request is one of the commands
-	local as = actionStateMap[request]
-	if as then
-		-- We limit to starting/stopping one action at the time to keep things simpler
-		if pD.PendingAction == "" or (pD.RetryCount > 0 and pD.PendingAction == request)then
-			CarModule.SetStatusMessage("Starting Action...")
-			pD.PendingAction = request
-			var.Set("StatusText","Start Action, sending command : "..request)
-			var.Set(as.var.."Message", "Pending...")
-			var.Set(as.var.."Status", as.succeed)
-			local cde, res = CarModule.Command(request)
-			local deb_stat = ""
-			if cde == 200 then
-				log.Debug(request.." result : "..res)
-				local rjs = json.decode(res) 
-				if rjs.errorCode == "0" then 
-					if rjs.actionNotification then 
-						processNotification(rjs.actionNotification,1,0)
-					elseif rjs.actionNotificationList then 
-						for i = 1, #rjs.actionNotificationList do
-							processNotification(rjs.actionNotificationList[i],#rjs.actionNotificationList,0)
-						end	
-					end	
-				else
-					deb_stat = "Failed"
-				end	
-			else
-				deb_stat = "Failed"
-			end	
-			if deb_stat ~= "" then	
-				-- See if we should retry the action
-				local retry = var.GetNumber("ActionRetries")
-				if pD.RetryCount < retry then
-					luup.call_delay("TeslaCar_StartAction", pD.RetryDelay, pD.PendingAction)
-					pD.RetryCount =  pD.RetryCount + 1
-					CarModule.SetStatusMessage("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-					log.Debug("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-				else	
-					CarModule.SetStatusMessage("Failed")
-					log.Debug("Retries #"..pD.RetryCount.." of failed "..pD.PendingAction.." all failed.")
-					pD.PendingAction = ""
-					pD.RetryCount = 0
-				end
-				var.Set("StatusText","Start Action, "..as.msg.." failed.")
-				var.Set(as.var.."Status", as.failed)
-			end	
-		else
-			var.Set(as.var.."Status", as.failed)
-			log.Debug("TeslaCar_StartAction, pending request, ignoring  : "..request)
-		end
-	elseif request:sub(1,4) == "poll" then
-		-- Try up to nine poll requests 10 or 30 seconds apart depending on number of pending notifications.
-		local npoll = tonumber(request:sub(-1) or 9)
-		local deb_stat = ""
-		if npoll < 9 then
-			var.Set("StatusText","Update Car Status in progress...."..npoll)
-			local cde, res = CarModule.Command("getNotifications")
-			if cde == 200 then
-				log.Debug("getNotifications result : "..res)
-				local rjs = json.decode(res) 
-				if rjs.errorCode == "0" then 
-					if rjs.actionNotification then 
-						processNotification(rjs.actionNotification,1,npoll+1)
-					elseif rjs.actionNotificationList then 
-						for i = 1, #rjs.actionNotificationList do
-							processNotification(rjs.actionNotificationList[i],#rjs.actionNotificationList,npoll+1)
-						end	
-					else	
-						-- Got empty response with only errorCode : 0, check for next
-						luup.call_delay("TeslaCar_StartAction", math.floor(pD.PollDelay/2), "poll"..npoll+1)
-					end	
-				else
-					deb_stat = "getNotifications failed result : "..res
-				end	
-			else
-				deb_stat = "getNotifications failed result : "..res
-			end
-		else
-			deb_stat = "getNotifications did not return a SUCCEEDED within expected time window."
-		end
-		-- See if things failed
-		if deb_stat ~= "" then
-			log.Debug(deb_stat)
-			log.Log(deb_stat,5)
-			-- See if we should retry the action
-			local retry = var.GetNumber("ActionRetries")
-			if pD.RetryCount < retry then
-				luup.call_delay("TeslaCar_StartAction", pD.RetryDelay, pD.PendingAction)
-				pD.RetryCount =  pD.RetryCount + 1
-				CarModule.SetStatusMessage("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-				log.Debug("Retry #"..pD.RetryCount.." of failed "..pD.PendingAction)
-				local as = actionStateMap[pD.PendingAction]
-				if as then var.Set(as.var.."Status", as.failed) end
-			else	
-				CarModule.SetStatusMessage()
-				local as = actionStateMap[pD.PendingAction]
-				if as then
-					var.Set(as.var.."Status", as.failed)
-					var.Set("StatusText","Start Action, "..as.msg.." failed.")
-				else
-					var.Set("StatusText","Update Action Status failed.")
-				end
-				log.Debug("Retries #"..pD.RetryCount.." of failed "..pD.PendingAction.." all failed.")
-				pD.PendingAction = ""
-				pD.RetryCount = 0
-			end	
-		end	
-	else	
-		log.Debug("TeslaCar_StartAction, unknown request : "..(request or ""))
-	end
-]]	
-	log.Debug("TeslaCar_StartAction, leave")
-end
 
 -- Initialize plug-in
 function TeslaCarModule_Initialize()
@@ -1780,20 +1670,19 @@ function TeslaCarModule_Initialize()
 	TeslaCar = TeslaCarAPI()
 	CarModule = TeslaCarModule()
 
-	TeslaCar.Initialize()
+--	TeslaCar.Initialize()
 	CarModule.Initialize()
 	CarModule.SetStatusMessage()
---	CarModule.Login()
+	CarModule.Login()
 
 	-- Set watches on email and password as userURL needs to be erased when changed
---	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Email", pD.DEV)
---	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Password", pD.DEV)
+	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Email", pD.DEV)
+	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Password", pD.DEV)
 --	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "VIN", pD.DEV)
 	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "LogLevel", pD.DEV)
 
 	-- Start pollers
 	CarModule.DailyPoll(true)
-	CarModule.MonitorAwakeState(true)
 	CarModule.ScheduledPoll(true)
 
 	log.Log("TeslaCarModule_Initialize finished ",10)

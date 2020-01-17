@@ -46,6 +46,7 @@ var TeslaCar = (function (api) {
 //				htmlAddPulldown(deviceID, 'Poll Interval; Fast Locations', 'PI4', chargeIntervals)+
 //				htmlAddInput(deviceID, 'Fast Poll Locations (lat,lng;lat,lng)', 30, 'FastPollLocations')+ 
 //				htmlAddInput(deviceID, 'No Poll time window (hh:mm-hh:mm)', 30, 'NoPollWindow')+ 
+//				htmlAddPulldown(deviceID, 'Autmatic software install ?', 'AutoSoftwareInstall', yesNo)+
 				htmlAddPulldown(deviceID, 'Log level', 'LogLevel', logLevel);
 			}
 			api.setCpanelContent(panelHtml);
@@ -85,7 +86,6 @@ var TeslaCar = (function (api) {
 				var lng = Number.parseFloat(varGet(deviceID, 'Longitude')).toFixed(4);
 				var clh = varGet(deviceID, 'LocationHome');
 				var lcst = varGet(deviceID, 'LastCarMessageTimestamp');
-				var fwv = varGet(deviceID, 'CarFirmwareVersion');
 				var ppls = varGet(deviceID, 'PowerPlugLockState');
 				var pps = varGet(deviceID, 'PowerPlugState');
 				var psc = varGet(deviceID, 'PowerSupplyConnected');
@@ -109,7 +109,7 @@ var TeslaCar = (function (api) {
 				panelHtml += '<p><div class="col-12" style="overflow-x: auto;"><table class="table-responsive-OFF table-sm"><tbody>'+
 					'<tr><td>Tesla Car name </td><td>'+cn+'</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
-					'<tr><td>Last Car Message received at </td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
+					'<tr><td>Last Car update received at </td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
 					'<tr><td>Milage </td><td>'+mlg+' Km</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
@@ -122,7 +122,6 @@ var TeslaCar = (function (api) {
 					'<tr><td>Trunk/Frunk Status </td><td>'+trs+'/'+frs+'</td></tr>'+
 					'<tr><td>Windows Status </td><td>'+wins+'</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
-					'<tr><td>Car Firmware </td><td>'+fwv+'</td></tr>'+
 					'</tbody></table></div></p>';
 			}	
 			api.setCpanelContent(panelHtml);

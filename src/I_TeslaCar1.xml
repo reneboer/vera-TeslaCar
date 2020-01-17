@@ -111,6 +111,21 @@
 			</job>
 		</action>
 		<action>
+			<name>updateSoftware</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction('updateSoftware')
+				return 4, nil
+			</job>
+		</action>
+		<action>
+			<name>SetAutoSoftwareInstall</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<run>
+				var.Set("AutoSoftwareInstall",lul_settings.newTargetValue or "0")
+			</run>
+		</action>
+		<action>
 			<name>Reset</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<run>

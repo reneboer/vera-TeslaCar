@@ -66,6 +66,14 @@
 			"operator": "==",
 			"value": 7
 		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Asleep.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 10
+		}]
 	}],
     "Tabs":[
         {
@@ -106,7 +114,7 @@
 					"Display": {
 						"Top": 13,
 						"Left": 1,
-						"Width": 50,
+						"Width": 100,
 						"Height": 20 
 					} 
 				},
@@ -117,7 +125,7 @@
 					"left": 2,
 					"Display": {
 						"Top": 5,
-						"Left": 80
+						"Left": 130
 					},
 					"states": [
 						{
@@ -166,7 +174,7 @@
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "ChargeMessage",
 						"Top": 13,
-						"Left": 180,
+						"Left": 230,
 						"Width": 55,
 						"Height": 20 
 					} 
@@ -187,7 +195,7 @@
 					"Display": {
 						"Top": 63,
 						"Left": 1,
-						"Width": 50,
+						"Width": 100,
 						"Height": 20 
 					} 
 				},
@@ -198,7 +206,7 @@
 					"left": 2,
 					"Display": {
 						"Top": 55,
-						"Left": 80
+						"Left": 130
 					},
 					"states": [
 						{
@@ -247,7 +255,98 @@
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "ClimateMessage",
 						"Top": 63,
-						"Left": 180,
+						"Left": 230,
+						"Width": 55,
+						"Height": 20 
+					} 
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "line_break"
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "label",
+					"top": 1,
+					"left": 1,
+					"text_align": "left",
+					"Label": {
+						"text": "Auto Software Update" 
+					},
+					"Display": {
+						"Top": 113,
+						"Left": 1,
+						"Width": 100,
+						"Height": 20 
+					} 
+				},
+                {
+                    "ControlGroup": 1,
+                    "ControlType": "multi_state_button",
+					"top": 1,
+					"left": 2,
+					"Display": {
+						"Top": 105,
+						"Left": 130
+					},
+					"states": [
+						{
+							"Label": {
+								"text": "Yes"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "AutoSoftwareInstall",
+								"Value": "1"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "SetAutoSoftwareInstall",
+								"Parameters": [
+									{
+                                        "Name": "newTargetValue",
+                                        "Value": "1"
+                                    } 
+								]
+							},
+							"ControlCode": "autoSoftwareInstall_on"
+						},
+						{
+							"Label": {
+								"text": "No"
+							},
+							"ControlGroup": 1,
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "AutoSoftwareInstall",
+								"Value": "0"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "SetAutoSoftwareInstall",
+								"Parameters": [
+									{
+                                        "Name": "newTargetValue",
+                                        "Value": "0"
+                                    } 
+								]
+							},
+							"ControlCode": "autoSoftwareInstall_off"
+                        }
+					]	
+                },
+				{
+					"ControlGroup": 1,
+					"ControlType":"variable",
+					"top": 1,
+					"left": 3,
+					"text_align": "right",
+					"Display": {
+						"Service": "urn:rboer-com:serviceId:TeslaCar1",
+						"Variable": "SoftwareMessage",
+						"Top": 113,
+						"Left": 230,
 						"Width": 55,
 						"Height": 20 
 					} 

@@ -61,47 +61,47 @@
 		<stateVariable>
 			<name>ChargePortStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>ClimateStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>ChargeStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>DoorsStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>WindowsStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>FruncStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>TruncStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>SoftwareStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>SunroofStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>LightsStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
+			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>Mileage</name>
@@ -131,7 +131,17 @@
 		<stateVariable>
 			<name>PowerSupplyConnected</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>PowerPlugState</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>AutoSoftwareInstall</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>ui1</dataType>
 		</stateVariable>
 	</serviceStateTable>
 	<actionList>
@@ -180,6 +190,14 @@
 		<action>
 			<name>stopClimate</name>
 			<relatedStateVariable>ClimateStatus</relatedStateVariable>
+		</action>
+		<action>
+			<name>updateSoftware</name>
+			<relatedStateVariable>SoftwareStatus</relatedStateVariable>
+		</action>
+		<action>
+			<name>SetAutoSoftwareInstall</name>
+			<relatedStateVariable>AutoSoftwareInstall</relatedStateVariable>
 		</action>
 		<action>
 			<name>Poll</name>
