@@ -2,7 +2,7 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.0, 16 January 2020
+	V1.0b, 21 January 2020
 	
 	A valid Tesla account registration is required.
 	
@@ -20,7 +20,7 @@
 	https://support.teslafi.com/knowledge-bases/2/articles/640-enabling-sleep-settings-to-limit-vampire-loss
 	https://github.com/dirkvm/teslams
 	https://github.com/zabuldon/teslajsonpy/tree/master/teslajsonpy
-	
+	https://github.com/irritanterik/homey-tesla.com
 	
 	
 ]]
@@ -32,7 +32,7 @@ local http		= require("socket.http")
 local url 		= require("socket.url")
 
 local pD = {
-	Version = "1.0",
+	Version = "1.0 beta",
 	SIDS = { 
 		MODULE = "urn:rboer-com:serviceId:TeslaCar1",
 		ALTUI = "urn:upnp-org:serviceId:altui1",
@@ -51,22 +51,9 @@ local pD = {
 	PendingAction = ""
 }
 
-local actionStateMap = {
-	["startCharge"] 	= { var = "Charge", succeed = 1, failed =0, msg = "charging start" },
-	["stopCharge"] 		= { var = "Charge", succeed = 0, failed = 1, msg = "charging stop" },
-	["startClimate"] 	= { var = "Climate", succeed = 1, failed =0, msg = "climatisation start" },
-	["stopClimate"] 	= { var = "Climate", succeed = 0, failed = 1, msg = "climatisation stop" }
-}
-
-local actionTypeMap = {
-	["START"] = "startCharge",
-	["STOP"] = "stopCharge",
-	["START_CLIMATISATION"] = "startClimate",
-	["STOP_CLIMATISATION"] = "stopClimate"
-}
-
 -- Define message when condition is not true
 local messageMap = {
+	{var="MovingStatus", val="0", msg="Moving"},
 	{var="ChargeStatus", val="0", msg="Charging On"},
 	{var="ClimateStatus", val="0", msg="Climatizing On"},
 	{var="DoorsStatus",val='{"dr":0,"df":0,"pr":0,"pf":0}',msg="Doors Open"},
@@ -85,7 +72,10 @@ local ICONS = {
 	UNLOCKED = 4,
 	TRUNK = 5,
 	FRUNK = 6,
-	DOORS = 7
+	DOORS = 7,
+	WINDOWS = 8,
+	MOVING = 9,
+	UNCONFIGURED = -1
 }
 
 
@@ -236,6 +226,13 @@ local taskHandle = -1
 	local function _debug(...)
 		if def_debug then
 			luup.log(def_prefix .. "_debug: " .. prot_format(-1,...), 50) 
+--[[			
+			local fh = io.open("/tmp/TeslaCar.log","a")
+			local msg = os.date("%d/%m/%Y %X") .. ": " .. prot_format(-1,...)
+			fh:write(msg)
+			fh:write("\n")
+			fh:close()
+]]			
 		end	
 	end
 	
@@ -288,26 +285,35 @@ end
 --- QUEUE STRUCTURE ---
 local Queue = {}
 function Queue.new()
-   return {first = 0, last = -1}
+	return {first = 0, last = -1}
 end
 
 function Queue.push(list, value)
-   local last = list.last + 1
-   list.last = last
-   list[last] = value
+	local last = list.last + 1
+	list.last = last
+	list[last] = value
 end
     
 function Queue.pop(list)
-   local first = list.first
-   if first > list.last then return nil end
-   local value = list[first]
-   list[first] = nil -- to allow garbage collection
-   list.first = first + 1
-   return value
+	local first = list.first
+	if first > list.last then return nil end
+	local value = list[first]
+	list[first] = nil -- to allow garbage collection
+	list.first = first + 1
+	return value
 end
 
 function Queue.len(list)
-   return list.last - list.first + 1
+	return list.last - list.first + 1
+end
+
+function Queue.drop(list)
+	log.Error("Dropping %d items from queue.", Queue.len(list))
+	while Queue.len(list) > 0 do
+		Queue.pop(list)
+	end
+	list.first = 0
+	list.last = -1
 end
 
 --[[
@@ -345,20 +351,17 @@ local function TeslaCarAPI()
 		["lockDoors"] 				= { method = "POST", url ="/command/door_lock" },
 		["honkHorn"] 				= { method = "POST", url ="/command/honk_horn" },
 		["flashLights"] 			= { method = "POST", url ="/command/flash_lights" },
-		["unlockFrunc"]				= { method = "POST", url ="/command/actuate_trunk&which_trunk=front" },
-		["unlockTrunc"] 			= { method = "POST", url ="/command/actuate_trunk&which_trunk=rear" },
+		["unlockFrunc"]				= { method = "POST", url ="/command/actuate_trunk", data = function(p) return {which_trunk="front"} end },
+		["unlockTrunc"] 			= { method = "POST", url ="/command/actuate_trunk", data = function(p) return {which_trunk="rear"} end },
 		["openChargePort"]		 	= { method = "POST", url ="/command/charge_port_door_open" },
 		["closeChargePort"]		 	= { method = "POST", url ="/command/charge_port_door_close" },
-		["setTemperature"] 			= { method = "POST", url ="/command/set_temps?driver_temp=%d&passenger_temp=%d", 
-										fmt = function(s,p) return string.format(s,p,p) end },
-		["setChargeLimit"] 			= { method = "POST", url ="/command/set_charge_limit?percent=%d",
-										fmt = function(s,p) return string.format(s,p) end },
-		["setMaxRangeChargeLimit"] 	= { method = "POST", url ="/command/charge_max_range" },
-		["setStandardRangeChargeLimit"] = { method = "POST", url ="/command/charge_standard" },
-		["openSunroof"] 			= { method = "POST", url ="/command/sun_roof_control?state=open" },
-		["closeSunroof"] 			= { method = "POST", url ="/command/sun_roof_control?state=close" },
-		["setSunroof"] 				= { method = "POST", url ="/command/sun_roof_control?state=move&percent=%d",
-										fmt = function(s,p) return string.format(s,p) end },
+		["setTemperature"] 			= { method = "POST", url ="/command/set_temps", data = function(p) return {driver_temp=p,passenger_temp=p} end },
+		["setChargeLimit"] 			= { method = "POST", url ="/command/set_charge_limit", data = function(p) return {percent=p} end },
+		["setMaximumChargeLimit"] 	= { method = "POST", url ="/command/charge_max_range" },
+		["setStandardChargeLimit"]  = { method = "POST", url ="/command/charge_standard" },
+		["openSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="open"} end },
+		["closeSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="close"} end },
+		["setSunroof"] 				= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="move",percent=p} end },
 		["updateSoftware"] 			= { method = "POST", url ="/command/schedule_software_update?offset_sec=50" }
 	}
 	
@@ -392,13 +395,13 @@ local function TeslaCarAPI()
 	local function HttpsRequest(mthd, strURL, ReqHdrs, PostData)
 		local result = {}
 		local request_body = nil
---log.Debug("HttpsRequest 1 %s", strURL)		
+log.Debug("HttpsRequest 1 %s", strURL)		
 		if PostData then
 			-- We pass JSONs in all cases
 			ReqHdrs["content-type"] = "application/json; charset=UTF-8"
 			request_body=json.encode(PostData)
 			ReqHdrs["content-length"] = string.len(request_body)
---log.Debug("HttpsRequest 2 body: %s",request_body)		
+log.Debug("HttpsRequest 2 body: %s",request_body)		
 		else	
 --log.Debug("HttpsRequest 2, no body ")		
 			ReqHdrs["content-length"] = "0"
@@ -411,11 +414,11 @@ local function TeslaCarAPI()
 			source = ltn12.source.string(request_body),
 			headers = ReqHdrs
 		}
---log.Debug("HttpsRequest 3 %d", cde)		
+log.Debug("HttpsRequest 3 %d", cde)		
 		if cde ~= 200 then
 			return false, nil, cde
 		else
---log.Debug("HttpsRequest 4 %s", table.concat(result))		
+log.Debug("HttpsRequest 4 %s", table.concat(result))		
 			return true, json.decode(table.concat(result)), cde
 		end
 	end	
@@ -547,8 +550,9 @@ log.Debug("SendCommand, sending %s", command)
 			if cmd then 
 				-- Set correct command URL with optional parameter
 				local url = cmd.url
-				if cmd.fmt then url = cmd.fmt(cmd.url, param) end
-				local res, reply, cde = HttpsRequest(cmd.method, vehicle_url..url, request_header)
+				local data = nil
+				if cmd.data then data = cmd.data(param) end
+				local res, reply, cde = HttpsRequest(cmd.method, vehicle_url..url, request_header, data)
 				if res then
 					return true, reply, "OK"
 				else
@@ -566,7 +570,7 @@ log.Debug("SendCommand, sending %s", command)
 	-- If car is not awake, wake it up first. Commands can be queued if needed.
 	-- Also handles situation when no vehicles are reported on the account by retrying several times.
 	-- For each command the callback cbs function is called to process the results. cbf is called for failures.
-	local function _send_command_async(cmd, cbs, cbf, param)
+	local function _send_command_async(cmd, param, cbs, cbf)
 		if (cmd == nil) then
 log.Debug("SendCommandAsync, no cmd specified. Queue length %d.", Queue.len(SendQueue))
 			-- Triggered to empty q
@@ -626,7 +630,7 @@ log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(
 log.Debug("SendCommandAsync, car is asleep. Wake it up and queue command %s", cmd)
 					Queue.push(SendQueue, {cmd = cmd, cbs = cbs, cbf = cbf, param = param})
 					_send_command("wakeUp")
-					luup.call_delay("TSC_await_wakeup_vehicle", 5, "10")
+					luup.call_delay("TSC_await_wakeup_vehicle", 5, "15")
 					return true, 200, "Waiting to wake up vehicle."
 				elseif not res and reply == 404 then
 					-- We got a response that there are no vehicles on the account. Retry after 10 secs, 20 times max.
@@ -681,6 +685,7 @@ log.Debug("SendCommandAsync, failure for command %s", cmd)
 	end
 
 	-- Wait until vehicle is awake, then re-send the queued command
+	-- If wake up fails we empty the whole queue, to avoid dead lock. It is up to calling app to start over at later point.
 	local function TSC_await_wakeup_vehicle(param)
 log.Debug("TSC_await_wakeup_vehicle enter",param)	
 		local cnt = tonumber(param) - 1
@@ -692,14 +697,34 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 				log.Debug("Wake up loop #%d woke up car. Send command(s).", cnt)
 				_send_command_async(nil)
 			elseif res then
-				-- Not awake yet retry in two seconds.
+				-- Not awake yet retry in three seconds.
 				log.Debug("Loop #%d to wake up car.", cnt)
-				luup.call_delay("TSC_await_wakeup_vehicle", 2, tostring(cnt))
+				luup.call_delay("TSC_await_wakeup_vehicle", 3, tostring(cnt))
+				if (cnt % 5) == 1 then
+					-- resend wake_up command if still asleep after 15 seconds
+					local res, reply, msg = _send_command("wakeUp")
+					if res then
+						log.Debug("Loop #%d to wake up car resend wake_up.", cnt)
+					else
+						-- Wake up failing signal then empty queue
+						local pop_t = Queue.pop(SendQueue)
+						pop_t.cbf(pop_t.cmd, reply, msg)
+						Queue.drop(SendQueue)
+						log.Error("Failure to wake up car. #%s, %s", reply, msg)
+					end
+				end	
 			else
 				-- Failure
+				local pop_t = Queue.pop(SendQueue)
+				pop_t.cbf(pop_t.cmd, reply, msg)
+				Queue.drop(SendQueue)
 				log.Error("Failure to wake up car. #%s, %s", reply, msg)
 			end
 		else
+			-- Wake up failed. Empty command queue.
+			local pop_t = Queue.pop(SendQueue)
+			pop_t.cbf(pop_t.cmd, 504, "Unable to wake up car in set time.")
+			Queue.drop(SendQueue)
 			log.Error("Unable to wake up car in set time.")
 		end
 	end
@@ -738,9 +763,10 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 	end
 
 	-- Initialize API functions 
-	local function _init(email, password)
+	local function _init(email, password, vin)
 		auth_data.email = email
 		auth_data.password = password
+		auth_data.vin = vin
 		-- Need to make these global for luup.call_delay use. 
 		_G.TSC_send_queued = TSC_send_queued
 		_G.TSC_recheck_vehicle = TSC_recheck_vehicle
@@ -769,19 +795,24 @@ function TeslaCarModule()
 		local msg = ""
 		if proposed then
 			msg = proposed
-		else	
-			-- Look for messages based on key status items
-			for k, msg_t in pairs(messageMap) do
-				local val = var.Get(msg_t.var)
-				if val ~= msg_t.val then
-					msg = msg_t.msg
-					break
-				end    
-			end
-			-- If no message, display range
-			if msg == "" then
-				local units = (var.Get("GuiDistanceUnits") == "km/hr" and "km" or "mi")
-				msg = string.format("Range: %s%s", var.Get("BatteryRange"), units)
+		else
+			-- First check if configured and connected or not
+			if not readyToPoll then
+				msg = "Not configured. Check settings."
+			else
+				-- Look for messages based on key status items
+				for k, msg_t in pairs(messageMap) do
+					local val = var.Get(msg_t.var)
+					if val ~= msg_t.val then
+						msg = msg_t.msg
+						break
+					end    
+				end
+				-- If no message, display range
+				if msg == "" then
+					local units = (var.Get("GuiDistanceUnits") == "km/hr" and "km" or "mi")
+					msg = string.format("Range: %s%s", var.Get("BatteryRange"), units)
+				end
 			end
 		end
 		var.Set("DisplayLine2", msg, pD.SIDS.ALTUI)
@@ -816,6 +847,7 @@ function TeslaCarModule()
 	local function _reset()
 		readyToPoll = false
 		TeslaCar.Logoff()
+		_set_status_message()
 		return 200, "OK"
 	end
 	
@@ -826,12 +858,14 @@ function TeslaCarModule()
 		-- If VIN is set look for car with that VIN, else first found is used.
 		local vin = var.Get("VIN")
 		if email ~= "" and password ~= "" then
-			local res, reply, msg = TeslaCar.Authenticate()
+			TeslaCar.Initialize(email, password, vin)
+			local res, reply, msg = TeslaCar.Authenticate(true)
 			if res then
 				var.Set("LastLogin", os.time())
 				res, reply, msg = TeslaCar.GetVehicle()
 				if res then
 					readyToPoll = true
+					var.Set("IconSet", ICONS.IDLE)
 					return 200, msg
 				else	
 					log.Error("Unable to select vehicle. errorCode : %s, errorMessage : %s", reply, msg)
@@ -958,6 +992,12 @@ function TeslaCarModule()
 		else	
 			var.Set("LockedMessage", "Locked")
 		end
+		if var.GetNumber("MovingStatus") == 1 then
+			var.Set("DisplayLine2", "Car is moving.", pD.SIDS.ALTUI)
+			icon = ICONS.MOVING
+		else	
+			var.Set("LockedMessage", "Locked")
+		end
 		local swStat = var.GetNumber("SoftwareStatus")
 		if swStat == 0 then
 			var.Set("SoftwareMessage", "Current version : ".. var.Get("CarFirmwareVersion"))
@@ -969,7 +1009,7 @@ function TeslaCarModule()
 			var.Set("SoftwareMessage", "Installing version : ".. var.Get("AvailableSoftwareVersion"))
 		end
 		var.Set("LastCarMessageTimestamp", os.time())
-		var.Set("IconSet",icon)
+		var.Set("IconSet", icon or 0) -- Do not use nil on ALTUI!
 		return true
 	end
 
@@ -1071,6 +1111,7 @@ function TeslaCarModule()
 			var.Set("LocationTS", state.gps_as_of or 0)
 
 			-- Update other drive details
+			var.Set("MovingStatus", (state.shift_state and state.shift_state ~= 'P') and 1 or 0)
 			var.Set("DriveSpeed", state.speed or 0)
 			var.Set("DrivePower", state.power or 0)
 			var.Set("DriveShiftState", state.shift_state or 0)
@@ -1323,7 +1364,13 @@ function TeslaCarModule()
 	-- Call backs for car request commands.
 	local function CM_CBS_Error(cmd,data,msg)
 		log.Error("Call back fail called: %s",msg)
-		_set_status_message()
+		if data == 504 then
+			-- Could not wake up cat
+			log.Error("Call back fail to wake up car: %s",msg)
+			_set_status_message("Failed to wake up car. Cmd "..cmd)
+		else	
+			_set_status_message()
+		end
 	end
 	
 	-- Standard call back for commands that do not require special handling
@@ -1336,8 +1383,8 @@ function TeslaCarModule()
 			else
 				log.Debug("Call back for success command %s, error message : %s", cmd, data.response.reason)
 			end
-			-- Update car status
-			_poll()
+			-- Update car status in 15 seconds
+			luup.call_delay("_poll", 15)
 		else
 			str = data
 			log.Debug("Call back success message : %s",msg)
@@ -1405,7 +1452,7 @@ function TeslaCarModule()
 		end
 
 		_set_status_message("Updating car status...")
-		local res, data, msg = TeslaCar.SendCommandAsync("getVehicleDetails",CM_CBS_getVehicleDetails,CM_CBS_Error)
+		local res, data, msg = TeslaCar.SendCommandAsync("getVehicleDetails",nil,CM_CBS_getVehicleDetails,CM_CBS_Error)
 		if res then
 			log.Debug("TeslaCar.GetVehicleData Async result : %s, %s", data, msg)
 		else
@@ -1416,10 +1463,10 @@ function TeslaCarModule()
 	end	
 
 	-- Send the requested command
-	local function _start_action(request)
-		log.Debug("Start Action enter for command %s.", request)
+	local function _start_action(request, param)
+		log.Debug("Start Action enter for command %s, %s.", request, (param or ""))
 		_set_status_message("Sending command "..request)
-		local res, data, msg = TeslaCar.SendCommandAsync(request,CM_CBS_Success,CM_CBS_Error)
+		local res, data, msg = TeslaCar.SendCommandAsync(request,param,CM_CBS_Success,CM_CBS_Error)
 		if res then
 			log.Debug("Start Action Async result : %s, %s", data, msg)
 		else
@@ -1443,10 +1490,10 @@ function TeslaCarModule()
 		log.Debug("Daily Poll, enter")
 		-- Schedule at next day if a time is configured
 		local poll_time = var.Get("DailyPollTime")
-		if poll_time ~= "" and readyToPoll then
+		if poll_time ~= "" then
 			log.Debug("Daily Poll, scheduling for %s.", poll_time)
-			luup.call_timer("_daily_poll", 2, poll_time, "1,2,3,4,5,6,7")
-			if not startup then
+			luup.call_timer("_daily_poll", 2, poll_time .. ":00", "1,2,3,4,5,6,7")
+			if (not startup) and readyToPoll then
 				-- If not at start-up, poll car if enabled.
 				-- PollSettings [1] = DailyPoll Enabled
 				local pol = var.Get("PollSettings")
@@ -1481,6 +1528,7 @@ function TeslaCarModule()
 			local swStat = var.GetNumber("SoftwareStatus")
 			local lckStat = var.GetNumber("LockedStatus")
 			local clmStat = var.GetNumber("ClimateStatus")
+			local mvStat = var.GetNumber("MovingStatus")
 			local res, cde, msg = TeslaCar.GetVehicleAwakeStatus()
 			if res then
 				if cde then
@@ -1502,10 +1550,14 @@ function TeslaCarModule()
 			-- PollSettings [3] = Poll interval if charging and remaining charge time > 1 hour
 			-- PollSettings [4] = Poll interval if charging and remaining charge time < 1 hour
 			-- PollSettings [5] = Poll interval when car just woke up not by our action or activity occurs (Unlocked, Preheat, SW install)
+			-- PollSettings [6] = Poll interval if car is moving
 			local pol = var.Get("PollSettings")
 			local pol_t = {}
 			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-			if (awake == 1 and prevAwake == 0 and lastPollInt > 1100) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
+			if mvStat == 1 then
+				interval = pol_t[6]
+				force = true
+			elseif (awake == 1 and prevAwake == 0 and lastPollInt > 1100) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
 				interval = pol_t[5]
 				force = true
 			elseif var.GetNumber("ChargeStatus") == 1 then
@@ -1545,9 +1597,9 @@ function TeslaCarModule()
 		-- Create variables we will need from get-go
 		var.Set("Version", pD.Version)
 		var.Default("Email")
---		var.Default("Password") store in attribute
+		var.Default("Password") --store in attribute
 		var.Default("LogLevel", pD.LogLevel)
-		var.Default("PollSettings", "1,20,60,5,1") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active in minutes
+		var.Default("PollSettings", "1,20,60,5,1,5") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)
@@ -1567,26 +1619,18 @@ function TeslaCarModule()
 		var.Default("TrunkStatus", 0)
 		var.Default("FrunkStatus", 0)
 		var.Default("SoftwareStatus", 0)
---		var.Default("ChargePortStatus", 0)
+		var.Default("MovingStatus", 0)
 		var.Default("PowerSupplyConnected", 0)
 		var.Default("Mileage")
 --		var.Default("ActionRetries", "0")
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
-		var.Default("IconSet",0)
+		var.Default("IconSet",ICONS.UNCONFIGURED)
 		
+		_G._poll = _poll
 		_G._daily_poll = _daily_poll
 		_G._scheduled_poll = _scheduled_poll
 		
-		local email = var.Get("Email")
-		local password = var.Get("Password")
-		-- If VIN is set look for car with that VIN, else use first found in reponse.
-		local vin = var.Get("VIN")
-		if email ~= "" and password ~= "" then
-			TeslaCar.Initialize(email, password, vin)
-		else
-			log.Warning("Email and/or password missing.")
-		end
 		return true
 	end
 
@@ -1619,15 +1663,16 @@ function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_val
 		CarModule.Reset()
 		local pwd = var.Get("Password")
 		if strVariable ~= "" and pwd ~= "" then
-			CarModule.Logon()
+			CarModule.Login()
+			CarModule.Poll()
 		end
 	elseif (strVariable == "Password") then
 		log.Debug("resetting TeslaCar connection...")
 		CarModule.Reset()
 		local em = var.Get("Email")
 		if strVariable ~= "" and em ~= "" then
-			log.Debug("resetting TeslaCar connection...")
-			CarModule.Logon()
+			CarModule.Login()
+			CarModule.Poll()
 		end
 	elseif (strVariable == "LogLevel") then	
 		-- Set log level and debug flag if needed
@@ -1672,9 +1717,9 @@ function TeslaCarModule_Initialize()
 
 --	TeslaCar.Initialize()
 	CarModule.Initialize()
-	CarModule.SetStatusMessage()
 	CarModule.Login()
-
+	CarModule.SetStatusMessage()
+	
 	-- Set watches on email and password as userURL needs to be erased when changed
 	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Email", pD.DEV)
 	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Password", pD.DEV)

@@ -43,6 +43,7 @@ var TeslaCar = (function (api) {
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging > 1hr', 'PI2', chargeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging < 1 hr', 'PI3', chargeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Active', 'PI4', activeIntervals)+
+				htmlAddPulldown(deviceID, 'Poll Interval; Moving', 'PI5', activeIntervals)+
 //				htmlAddPulldown(deviceID, 'Poll Interval; Fast Locations', 'PI4', chargeIntervals)+
 //				htmlAddInput(deviceID, 'Fast Poll Locations (lat,lng;lat,lng)', 30, 'FastPollLocations')+ 
 //				htmlAddInput(deviceID, 'No Poll time window (hh:mm-hh:mm)', 30, 'NoPollWindow')+ 

@@ -184,12 +184,36 @@
 			<relatedStateVariable>ChargeStatus</relatedStateVariable>
 		</action>
 		<action>
+			<name>setChargeLimit</name>
+			<argumentList>
+				<argument>
+					<name>newTargetValue</name>
+					<direction>in</direction>
+				</argument>
+			</argumentList>
+		</action>
+		<action>
+			<name>setStandardChargeLimit</name>
+		</action>
+		<action>
+			<name>setMaximumChargeLimit</name>
+		</action>
+		<action>
 			<name>startClimate</name>
 			<relatedStateVariable>ClimateStatus</relatedStateVariable>
 		</action>
 		<action>
 			<name>stopClimate</name>
 			<relatedStateVariable>ClimateStatus</relatedStateVariable>
+		</action>
+		<action>
+			<name>setTemperature</name>
+			<argumentList>
+				<argument>
+					<name>newTargetValue</name>
+					<direction>in</direction>
+				</argument>
+			</argumentList>
 		</action>
 		<action>
 			<name>updateSoftware</name>
