@@ -2,14 +2,15 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.0b, 21 January 2020
+	V1.0, 26 January 2020
 	
 	A valid Tesla account registration is required.
 	
 	To-do
-		1) correct message logic
-		2) Vera Event Triggers
-		3) child devices for locked, doors, windows, charging status.
+		1) Vera Event Triggers
+		2) child devices for locked, doors, windows, charging status.
+		3) Imperihome interface
+		4) Smart, auto tuning preheat
 
 	https://www.teslaapi.io/
 	https://tesla-api.timdorr.com/
@@ -32,7 +33,7 @@ local http		= require("socket.http")
 local url 		= require("socket.url")
 
 local pD = {
-	Version = "1.0 beta",
+	Version = "1.0",
 	SIDS = { 
 		MODULE = "urn:rboer-com:serviceId:TeslaCar1",
 		ALTUI = "urn:upnp-org:serviceId:altui1",
@@ -56,8 +57,8 @@ local messageMap = {
 	{var="MovingStatus", val="0", msg="Moving"},
 	{var="ChargeStatus", val="0", msg="Charging On"},
 	{var="ClimateStatus", val="0", msg="Climatizing On"},
-	{var="DoorsStatus",val='{"dr":0,"df":0,"pr":0,"pf":0}',msg="Doors Open"},
-	{var="WindowsStatus",val='{"dr":0,"df":0,"pr":0,"pf":0}',msg="Windows Open"},
+	{var="DoorsMessage",val="Closed",msg="Doors Open"},
+	{var="WindowsMessage",val="Closed",msg="Windows Open"},
 	{var="LockedStatus",val="1",msg="Car Unlocked"},
 	{var="SunroofStatus",val="0",msg="Sunroof Open"}
 }
@@ -232,7 +233,7 @@ local taskHandle = -1
 			fh:write(msg)
 			fh:write("\n")
 			fh:close()
-]]			
+--]]			
 		end	
 	end
 	
@@ -362,7 +363,7 @@ local function TeslaCarAPI()
 		["openSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="open"} end },
 		["closeSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="close"} end },
 		["setSunroof"] 				= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="move",percent=p} end },
-		["updateSoftware"] 			= { method = "POST", url ="/command/schedule_software_update?offset_sec=50" }
+		["updateSoftware"] 			= { method = "POST", url ="/command/schedule_software_update", data = function(p) return {offset_sec=120} end }
 	}
 	
 	-- Tesla API location
@@ -1080,16 +1081,16 @@ function TeslaCarModule()
 	--[[ Done
 		"drive_state": {
 			"gps_as_of": 1577194773,
-			"heading": 172,
+			"heading": 172, (0-360)
 			"latitude": 52.088944,
 			"longitude": 4.959888,
 			"native_latitude": 52.088944,
 			"native_location_supported": 1,
 			"native_longitude": 4.959888,
 			"native_type": "wgs",
-			"power": 0,
-			"shift_state": null,
-			"speed": null,
+			"power": 0, (0-1000?)
+			"shift_state": null, (P, D, R, N)
+			"speed": null, (0-160)
 			"timestamp": 1577196729609
 		},
 	]]
@@ -1128,7 +1129,7 @@ function TeslaCarModule()
 			"climate_keeper_mode": "off",
 			"defrost_mode": 0,
 			"driver_temp_setting": 19.0,
-			"fan_status": 0,
+			"fan_status": 0,  (1-7)
 			"inside_temp": 11.8,
 			"is_auto_conditioning_on": false,
 			"is_climate_on": false,
@@ -1142,7 +1143,7 @@ function TeslaCarModule()
 			"passenger_temp_setting": 19.0,
 			"remote_heater_control_enabled": false,
 			"right_temp_direction": 0,
-			"seat_heater_left": 0,
+			"seat_heater_left": 0, (1-3)
 			"seat_heater_rear_center": 0,
 			"seat_heater_rear_left": 0,
 			"seat_heater_rear_right": 0,
@@ -1398,9 +1399,9 @@ function TeslaCarModule()
 		local deb_res = ""
 --[[
 		"id": 4401777740463606,
-		"user_id": 1175763,
-		"vehicle_id": 455354106,
-		"vin": "5YJ3E7EB6LF560614",
+		"user_id": 1175...,
+		"vehicle_id": 45535....,
+		"vin": "5YJ3E7EB6LF.....",
 		"display_name": "mrFramers Car",
 		"option_codes": "AD15,MDL3,PBSB,RENA,BT37,ID3W,RF3G,S3PB,DRLH,DV2W,W39B,APF0,COUS,BC3B,CH07,PC30,FC3P,FG31,GLFR,HL31,HM31,IL31,LTPB,MR31,FM3B,RS3H,SA3P,STCP,SC04,SU3C,T3CA,TW00,TM00,UT3P,WR00,AU3P,APH3,AF00,ZCST,MI00,CDM0",
 		"color": null,
@@ -1622,7 +1623,7 @@ function TeslaCarModule()
 		var.Default("MovingStatus", 0)
 		var.Default("PowerSupplyConnected", 0)
 		var.Default("Mileage")
---		var.Default("ActionRetries", "0")
+		var.Default("StandardChargeLimit", 90)
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
 		var.Default("IconSet",ICONS.UNCONFIGURED)
@@ -1683,7 +1684,7 @@ end
 
 
 -- Initialize plug-in
-function TeslaCarModule_Initialize()
+function TeslaCarModule_Initialize(lul_device)
 	pD.DEV = lul_device
 
 	-- start Utility API's
@@ -1692,20 +1693,23 @@ function TeslaCarModule_Initialize()
 	var.Initialize(pD.SIDS.MODULE, pD.DEV)
 	log.Initialize(pD.Description, var.GetNumber("LogLevel"), true)
 
-	log.Log("device #" .. pD.DEV .. " is initializing!",3)
+	log.Info("device #%d is initializing!", tonumber(pD.DEV))
 
 	-- See if we are running on openLuup. If not stop.
-	if (luup.version_major == 7) and (luup.version_minor == 0) then
+	if luup.attr_get("openLuup",0) ~= nil then
 		pD.onOpenLuup = true
 		log.Log("We are running on openLuup!!")
+	elseif luup.version_major == 7 then	
+		pD.onOpenLuup = false
+		log.Log("We are running on Vera UI7!!")
 	else	
-		luup.set_failure(1, pD.DEV)
-		return true, "Incompatible with platform.", pD.Description
+		log.Error("Not supporting Vera UI%s!! Sorry.",luup.version_major)
+		return false, "Not supporting Vera UI version", pD.Description
 	end
 		
 	-- See if user disabled plug-in 
 	if (var.GetAttribute("disabled") == 1) then
-		log.Log("Init: Plug-in version "..pD.Version.." - DISABLED",2)
+		log.Warning("Init: Plug-in version %s - DISABLED",pD.Version)
 		-- Now we are done. Mark device as disabled
 		var.Set("DisplayLine2","Plug-in disabled", pD.SIDS.ALTUI)
 		luup.set_failure(0, pD.DEV)
@@ -1730,7 +1734,7 @@ function TeslaCarModule_Initialize()
 	CarModule.DailyPoll(true)
 	CarModule.ScheduledPoll(true)
 
-	log.Log("TeslaCarModule_Initialize finished ",10)
+	log.Log("TeslaCarModule_Initialize finished ")
 	luup.set_failure(0, pD.DEV)
 	return true, "Plug-in started.", pD.Description
 end

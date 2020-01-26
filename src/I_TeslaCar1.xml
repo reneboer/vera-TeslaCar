@@ -4,7 +4,7 @@
 	
 	Written by Rene Boer
 	
-	V1.0 10 November 2019
+	V1.0 25 January 2020
 	
 -->
 <implementation>
@@ -82,7 +82,9 @@
 			<name>startCharge</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
+				-- Set charge limit back to desired value to assure charging will start
 				var.Set("ChargeStatus", 1)
+				CarModule.StartAction('setChargeLimit', var.GetNumber("StandardChargeLimit"))
 				CarModule.StartAction('startCharge')
 				return 4, nil
 			</job>
@@ -91,7 +93,9 @@
 			<name>stopCharge</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
+				-- Set low charge limit to assure charging will stop.
 				var.Set("ChargeStatus", 0)
+				CarModule.StartAction('setChargeLimit', 50)
 				CarModule.StartAction('stopCharge')
 				return 4, nil
 			</job>

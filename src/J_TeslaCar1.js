@@ -32,6 +32,7 @@ var TeslaCar = (function (api) {
 				var yesNo = [{'value':'0','label':'No'},{'value':'1','label':'Yes'}];
 				var chargeIntervals = [{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'},{'value':'20','label':'20 Min'},{'value':'30','label':'30 Min'},{'value':'60','label':'60 Min'},{'value':'90','label':'90 Min'},{'value':'120','label':'Two hours'},{'value':'240','label':'Four Hours'}];
 				var activeIntervals = [{'value':'1','label':'1 Min'},{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'}];
+				var limitIntervals = [{'value':'75','label':'75%'},{'value':'80','label':'80%'},{'value':'85','label':'85%'},{'value':'90','label':'95%'}];
 				var logLevel = [{'value':'1','label':'Error'},{'value':'2','label':'Warning'},{'value':'8','label':'Info'},{'value':'10','label':'Debug'},{'value':'11','label':'Test Debug'}];
 //				var retries = [{'value':'0','label':'None'},{'value':'1','label':'One'},{'value':'2','label':'Two'},{'value':'3','label':'Three'},{'value':'4','label':'Four'}];
 
@@ -44,10 +45,8 @@ var TeslaCar = (function (api) {
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging < 1 hr', 'PI3', chargeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Active', 'PI4', activeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Moving', 'PI5', activeIntervals)+
-//				htmlAddPulldown(deviceID, 'Poll Interval; Fast Locations', 'PI4', chargeIntervals)+
-//				htmlAddInput(deviceID, 'Fast Poll Locations (lat,lng;lat,lng)', 30, 'FastPollLocations')+ 
+				htmlAddPulldown(deviceID, 'Standard Charge Limit', 'StandardChargeLimit', limitIntervals)+
 //				htmlAddInput(deviceID, 'No Poll time window (hh:mm-hh:mm)', 30, 'NoPollWindow')+ 
-//				htmlAddPulldown(deviceID, 'Autmatic software install ?', 'AutoSoftwareInstall', yesNo)+
 				htmlAddPulldown(deviceID, 'Log level', 'LogLevel', logLevel);
 			}
 			api.setCpanelContent(panelHtml);

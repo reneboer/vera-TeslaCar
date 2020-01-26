@@ -128,6 +128,40 @@
             "Control":[
 				{
 					"ControlGroup": 1,
+					"ControlType": "variable",
+					"top": "0",
+					"left": "0",
+					"Display": {
+						"Service": "urn:upnp-org:serviceId:altui1",
+						"Variable": "DisplayLine1",
+						"Top": 5,
+						"Left": 1,
+						"Width": 200,
+						"Height": 20
+					}
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "line_break"
+				},
+				{
+					"ControlGroup": 1,
+					"ControlType": "variable",
+					"top": "1",
+					"left": "0",
+					"Display": {
+						"Service": "urn:upnp-org:serviceId:altui1",
+						"Variable": "DisplayLine2",
+						"Top": 25,
+						"Left": 1,
+						"Width": 200,
+						"Height": 20
+					}
+				},
+				{
+					"ControlType": "line_break"
+				},
+				{
 					"ControlType": "label",
 					"top": 1,
 					"left": 1,
@@ -136,19 +170,18 @@
 						"text": "Charging" 
 					},
 					"Display": {
-						"Top": 13,
+						"Top": 53,
 						"Left": 1,
 						"Width": 100,
 						"Height": 20 
 					} 
 				},
                 {
-                    "ControlGroup": 1,
                     "ControlType": "multi_state_button",
 					"top": 1,
 					"left": 2,
 					"Display": {
-						"Top": 5,
+						"Top": 45,
 						"Left": 130
 					},
 					"states": [
@@ -156,7 +189,6 @@
 							"Label": {
 								"text": "On"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "ChargeStatus",
@@ -173,7 +205,6 @@
 							"Label": {
 								"text": "Off"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "ChargeStatus",
@@ -189,7 +220,6 @@
 					]	
                 },
 				{
-					"ControlGroup": 1,
 					"ControlType": "variable",
 					"top": 1,
 					"left": 3,
@@ -197,18 +227,16 @@
 					"Display": {
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "ChargeMessage",
-						"Top": 13,
+						"Top": 53,
 						"Left": 230,
 						"Width": 55,
 						"Height": 20 
 					} 
 				},
 				{
-					"ControlGroup": 1,
 					"ControlType": "line_break"
 				},
 				{
-					"ControlGroup": 1,
 					"ControlType": "label",
 					"top": 1,
 					"left": 1,
@@ -217,19 +245,18 @@
 						"text": "Climate" 
 					},
 					"Display": {
-						"Top": 63,
+						"Top": 103,
 						"Left": 1,
 						"Width": 100,
 						"Height": 20 
 					} 
 				},
                 {
-                    "ControlGroup": 1,
                     "ControlType": "multi_state_button",
 					"top": 1,
 					"left": 2,
 					"Display": {
-						"Top": 55,
+						"Top": 95,
 						"Left": 130
 					},
 					"states": [
@@ -237,7 +264,6 @@
 							"Label": {
 								"text": "On"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "ClimateStatus",
@@ -254,7 +280,6 @@
 							"Label": {
 								"text": "Off"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "ClimateStatus",
@@ -270,7 +295,6 @@
 					]	
                 },
 				{
-					"ControlGroup": 1,
 					"ControlType":"variable",
 					"top": 1,
 					"left": 3,
@@ -278,18 +302,16 @@
 					"Display": {
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "ClimateMessage",
-						"Top": 63,
+						"Top": 103,
 						"Left": 230,
 						"Width": 55,
 						"Height": 20 
 					} 
 				},
 				{
-					"ControlGroup": 1,
 					"ControlType": "line_break"
 				},
 				{
-					"ControlGroup": 1,
 					"ControlType": "label",
 					"top": 1,
 					"left": 1,
@@ -298,19 +320,18 @@
 						"text": "Auto Software Update" 
 					},
 					"Display": {
-						"Top": 113,
+						"Top": 153,
 						"Left": 1,
 						"Width": 100,
 						"Height": 20 
 					} 
 				},
                 {
-                    "ControlGroup": 1,
                     "ControlType": "multi_state_button",
 					"top": 1,
 					"left": 2,
 					"Display": {
-						"Top": 105,
+						"Top": 145,
 						"Left": 130
 					},
 					"states": [
@@ -318,7 +339,6 @@
 							"Label": {
 								"text": "Yes"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "AutoSoftwareInstall",
@@ -340,7 +360,6 @@
 							"Label": {
 								"text": "No"
 							},
-							"ControlGroup": 1,
 							"Display": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
 								"Variable": "AutoSoftwareInstall",
@@ -361,7 +380,6 @@
 					]	
                 },
 				{
-					"ControlGroup": 1,
 					"ControlType":"variable",
 					"top": 1,
 					"left": 3,
@@ -369,7 +387,7 @@
 					"Display": {
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "SoftwareMessage",
-						"Top": 113,
+						"Top": 153,
 						"Left": 230,
 						"Width": 55,
 						"Height": 20 
