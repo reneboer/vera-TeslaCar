@@ -2,10 +2,14 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.0, 26 January 2020
+	V1.1, 28 January 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.1 changes:
+		- Tesla API version 6 does not seem to report windows status, set to closed for that version.
+		- Similar for cable connected or not. Using derrived value form charge_status instead for V6.
+		
 	To-do
 		1) Vera Event Triggers
 		2) child devices for locked, doors, windows, charging status.
@@ -22,7 +26,7 @@
 	https://github.com/dirkvm/teslams
 	https://github.com/zabuldon/teslajsonpy/tree/master/teslajsonpy
 	https://github.com/irritanterik/homey-tesla.com
-	
+	https://github.com/jonahwh/tesla-api-client/blob/master/swagger.yml
 	
 ]]
 
@@ -1162,7 +1166,7 @@ function TeslaCarModule()
 			var.Set("FrontDefrosterStatus", _bool_to_zero_one(state.is_front_defroster_on))
 			var.Set("RearDefrosterStatus", _bool_to_zero_one(state.is_rear_defroster_on))
 			var.Set("PreconditioningStatus", _bool_to_zero_one(state.is_preconditioning))
-			var.Set("FanStatus", _bool_to_zero_one(state.fan_status))
+			var.Set("FanStatus", state.fan_status or 0)
 			var.Set("SeatHeaterStatus", state.seat_heater_left or 0)
 			var.Set("MirrorHeaterStatus", _bool_to_zero_one(state.side_mirror_heaters))
 			var.Set("SteeringWeelHeaterStatus", _bool_to_zero_one(state.steering_wheel_heater))
@@ -1234,10 +1238,20 @@ function TeslaCarModule()
 			end
 			if state.battery_range then var.Set("BatteryRange", _convert_range_miles_to_units(state.battery_range, "D")) end
 			if state.battery_level then var.Set("BatteryLevel", state.battery_level , pD.SIDS.HA) end
-			if state.conn_charge_cable and state.conn_charge_cable ~= "<invalid>" then
-				var.Set("PowerPlugState", 1)
-			else	
-				var.Set("PowerPlugState", 0)
+			if state.conn_charge_cable then
+				-- Is in api_version 7, but not before I think
+				if state.conn_charge_cable ~= "<invalid>" then
+					var.Set("PowerPlugState", 1)
+				else	
+					var.Set("PowerPlugState", 0)
+				end
+			else
+				-- V6 and prior.
+				if state.charging_state == "Disconnected" or state.charging_state == "NoPower" then
+					var.Set("PowerPlugState", 0)
+				else
+					var.Set("PowerPlugState", 1)
+				end
 			end
 			if state.charging_state then 
 				if state.charging_state == "Charging" then
@@ -1333,7 +1347,12 @@ function TeslaCarModule()
 			var.Set("FrunkStatus",state.ft)
 			var.Set("TrunkStatus",state.rt)
 			var.Set("DoorsStatus",json.encode({df = state.df, pf = state.pf, dr = state.dr, pr = state.pr}))
-			var.Set("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
+			if state.api_version < 7 then
+				-- Seems API V6 does not report windows status, so assume closed.
+				var.Set("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
+			else
+				var.Set("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
+			end	
 			if var.GetNumber("CarHasSunRoof") ~= 0 and state.sun_roof_state then 
 				var.Set("SunroofStatus",state.sun_roof_state)
 			end	
