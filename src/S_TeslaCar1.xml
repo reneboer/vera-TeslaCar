@@ -180,6 +180,10 @@
 			<relatedStateVariable>ChargeStatus</relatedStateVariable>
 		</action>
 		<action>
+			<name>prepareDeparture</name>
+			<relatedStateVariable>ChargeStatus</relatedStateVariable>
+		</action>
+		<action>
 			<name>stopCharge</name>
 			<relatedStateVariable>ChargeStatus</relatedStateVariable>
 		</action>
@@ -189,6 +193,7 @@
 				<argument>
 					<name>newTargetValue</name>
 					<direction>in</direction>
+					<retval/>
 				</argument>
 			</argumentList>
 		</action>
@@ -212,6 +217,7 @@
 				<argument>
 					<name>newTargetValue</name>
 					<direction>in</direction>
+					<retval/>
 				</argument>
 			</argumentList>
 		</action>
@@ -220,7 +226,14 @@
 			<relatedStateVariable>SoftwareStatus</relatedStateVariable>
 		</action>
 		<action>
-			<name>SetAutoSoftwareInstall</name>
+			<name>setAutoSoftwareInstall</name>
+			<argumentList>
+				<argument>
+					<name>newTargetValue</name>
+					<direction>in</direction>
+					<retval/>
+				</argument>
+			</argumentList>
 			<relatedStateVariable>AutoSoftwareInstall</relatedStateVariable>
 		</action>
 		<action>

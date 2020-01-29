@@ -2,19 +2,22 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.1, 28 January 2020
+	V1.2, 28 January 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.2 changes:
+		- added command prepareDeparture that will stop charging and unlatch the power cable.
 	V1.1 changes:
 		- Tesla API version 6 does not seem to report windows status, set to closed for that version.
-		- Similar for cable connected or not. Using derrived value form charge_status instead for V6.
+		- Similar for cable connected or not. Using derived value form charge_status instead for V6.
 		
 	To-do
 		1) Vera Event Triggers
 		2) child devices for locked, doors, windows, charging status.
-		3) Imperihome interface
-		4) Smart, auto tuning preheat
+		3) Check for ChargPortLatched to be 1 status.
+		4)Doing a poll after each command in a few seconds is a bit much. Delay for like 5 sec after last command?
+		5) Smart, auto tuning preheat
 
 	https://www.teslaapi.io/
 	https://tesla-api.timdorr.com/
@@ -940,7 +943,7 @@ function TeslaCarModule()
 			local hrs = math.floor(chrTime)
 			local mins = math.floor((chrTime - hrs) * 60)
 			var.Set("ChargeMessage", sf("Battery %s%%, range %s%s, time remaining %d:%02d.", bl, br, units, hrs, mins))
-			var.Set("DisplayLine2", sf("Charging; range %s%s, time remaining %d:%02d.", bl, units, hrs, mins))
+			var.Set("DisplayLine2", sf("Charging; range %s%s, time remaining %d:%02d.", bl, units, hrs, mins), pD.SIDS.ALTUI)
 			icon = ICONS.CHARGING
 		else	
 			if var.GetNumber("PowerSupplyConnected") == 1 and var.GetNumber("PowerPlugState") == 1 then
@@ -1347,11 +1350,11 @@ function TeslaCarModule()
 			var.Set("FrunkStatus",state.ft)
 			var.Set("TrunkStatus",state.rt)
 			var.Set("DoorsStatus",json.encode({df = state.df, pf = state.pf, dr = state.dr, pr = state.pr}))
-			if state.api_version < 7 then
-				-- Seems API V6 does not report windows status, so assume closed.
-				var.Set("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
-			else
+			if state.fd_window then
 				var.Set("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
+			else
+				-- Seems model S does not report windows status, so assume closed.
+				var.Set("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
 			end	
 			if var.GetNumber("CarHasSunRoof") ~= 0 and state.sun_roof_state then 
 				var.Set("SunroofStatus",state.sun_roof_state)
@@ -1403,7 +1406,8 @@ function TeslaCarModule()
 			else
 				log.Debug("Call back for success command %s, error message : %s", cmd, data.response.reason)
 			end
-			-- Update car status in 15 seconds
+			-- Update car status in 15 seconds 
+--(need to optimize I think so it does not happen in seconds when multiple commands are sent)
 			luup.call_delay("_poll", 15)
 		else
 			str = data

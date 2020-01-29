@@ -18,65 +18,87 @@
 			<name>flashLights</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('flashLights')
+				CarModule.StartAction("flashLights")
 				return 4, nil
 			</job>
+			<jobname>flashLights</jobname>
 		</action>
 		<action>
 			<name>honkHorn</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('honkHorn')
+				CarModule.StartAction("honkHorn")
 				return 4, nil
 			</job>
+			<jobname>honkHorn</jobname>
 		</action>
 		<action>
 			<name>lockDoors</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('lockDoors')
+				CarModule.StartAction("lockDoors")
 				return 4, nil
 			</job>
+			<jobname>lockDoors</jobname>
 		</action>
 		<action>
 			<name>unlockDoors</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('unlockDoors')
+				CarModule.StartAction("unlockDoors")
 				return 4, nil
 			</job>
+			<jobname>unlockDoors</jobname>
 		</action>
 		<action>
 			<name>unlockFrunc</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('unlockFrunc')
+				CarModule.StartAction("unlockFrunc")
 				return 4, nil
 			</job>
+			<jobname>unlockFrunc</jobname>
 		</action>
 		<action>
 			<name>unlockTrunc</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('unlockTrunc')
+				CarModule.StartAction("unlockTrunc")
 				return 4, nil
 			</job>
+			<jobname>unlockTrunc</jobname>
 		</action>
 		<action>
 			<name>openChargePort</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('openChargePort')
+				CarModule.StartAction("openChargePort")
 				return 4, nil
 			</job>
+			<jobname>openChargePort</jobname>
 		</action>
 		<action>
 			<name>closeChargePort</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('closeChargePort')
+				CarModule.StartAction("closeChargePort")
 				return 4, nil
 			</job>
+			<jobname>closeChargePort</jobname>
+		</action>
+		<action>
+			<name>prepareDeparture</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				-- Run commands to stop charging and release cable (I hope)
+				var.Set("ChargeStatus", 0)
+				CarModule.StartAction("setChargeLimit", 50)
+				CarModule.StartAction("stopCharge")
+				CarModule.StartAction("openChargePort")
+				CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
+				return 4, nil
+			</job>
+			<jobname>prepareDeparture</jobname>
 		</action>
 		<action>
 			<name>startCharge</name>
@@ -84,10 +106,11 @@
 			<job>
 				-- Set charge limit back to desired value to assure charging will start
 				var.Set("ChargeStatus", 1)
-				CarModule.StartAction('setChargeLimit', var.GetNumber("StandardChargeLimit"))
-				CarModule.StartAction('startCharge')
+--	Goes to quickly			CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
+				CarModule.StartAction("startCharge")
 				return 4, nil
 			</job>
+			<jobname>startCharge</jobname>
 		</action>
 		<action>
 			<name>stopCharge</name>
@@ -95,75 +118,85 @@
 			<job>
 				-- Set low charge limit to assure charging will stop.
 				var.Set("ChargeStatus", 0)
-				CarModule.StartAction('setChargeLimit', 50)
-				CarModule.StartAction('stopCharge')
+				CarModule.StartAction("setChargeLimit", 50)
+				CarModule.StartAction("stopCharge")
+				CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
 				return 4, nil
 			</job>
+			<jobname>stopCharge</jobname>
 		</action>
 		<action>
 			<name>setChargeLimit</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('setChargeLimit', lul_settings.newTargetValue or 90)
+				CarModule.StartAction("setChargeLimit", lul_settings.newTargetValue or 90)
 				return 4, nil
 			</job>
+			<jobname>setChargeLimit</jobname>
 		</action>
 		<action>
 			<name>setStandardChargeLimit</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('setStandardChargeLimit')
+				CarModule.StartAction("setStandardChargeLimit")
 				return 4, nil
 			</job>
+			<jobname>setStandardChargeLimit</jobname>
 		</action>
 		<action>
 			<name>setMaximumChargeLimit</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('setMaximumChargeLimit')
+				CarModule.StartAction("setMaximumChargeLimit")
 				return 4, nil
 			</job>
+			<jobname>setMaximumChargeLimit</jobname>
 		</action>
 		<action>
 			<name>startClimate</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
 				var.Set("ClimateStatus", 1)
-				CarModule.StartAction('startClimate')
+				CarModule.StartAction("startClimate")
 				return 4, nil
 			</job>
+			<jobname>startClimate</jobname>
 		</action>
 		<action>
 			<name>stopClimate</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
 				var.Set("ClimateStatus", 0)
-				CarModule.StartAction('stopClimate')
+				CarModule.StartAction("stopClimate")
 				return 4, nil
 			</job>
+			<jobname>stopClimate</jobname>
 		</action>
 		<action>
 			<name>setTemperature</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('setTemperature', lul_settings.newTargetValue or 20)
+				CarModule.StartAction("setTemperature", lul_settings.newTargetValue or 20)
 				return 4, nil
 			</job>
+			<jobname>setTemperature</jobname>
 		</action>
 		<action>
 			<name>updateSoftware</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction('updateSoftware')
+				CarModule.StartAction("updateSoftware")
 				return 4, nil
 			</job>
+			<jobname>updateSoftware</jobname>
 		</action>
 		<action>
-			<name>SetAutoSoftwareInstall</name>
+			<name>setAutoSoftwareInstall</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<run>
 				var.Set("AutoSoftwareInstall",lul_settings.newTargetValue or 0)
 			</run>
+			<jobname>setAutoSoftwareInstall</jobname>
 		</action>
 		<action>
 			<name>Reset</name>
@@ -180,6 +213,7 @@
 				CarModule.Login()
 				return 4, nil
 			</job>
+			<jobname>Login</jobname>
 		</action>
 		<action>
 			<name>Poll</name>
@@ -188,6 +222,7 @@
 				CarModule.Poll()
 				return 4, nil
 			</job>
+			<jobname>Poll</jobname>
 		</action>
 	</actionList>
 </implementation>
