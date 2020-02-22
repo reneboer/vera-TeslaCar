@@ -87,15 +87,60 @@
 			<jobname>closeChargePort</jobname>
 		</action>
 		<action>
+			<name>ventSunroof</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction("ventSunroof")
+				return 4, nil
+			</job>
+			<jobname>ventSunroof</jobname>
+		</action>
+		<action>
+			<name>closeSunroof</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction("closeSunroof")
+				return 4, nil
+			</job>
+			<jobname>closeSunroof</jobname>
+		</action>
+		<action>
+			<name>ventWindows</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction("ventWindows")
+				return 4, nil
+			</job>
+			<jobname>ventWindows</jobname>
+		</action>
+		<action>
+			<name>closeWindows</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction("closeWindows")
+				return 4, nil
+			</job>
+			<jobname>closeWindows</jobname>
+		</action>
+		<action>
 			<name>prepareDeparture</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
 				-- Run commands to stop charging and release cable (I hope)
-				var.Set("ChargeStatus", 0)
-				CarModule.StartAction("setChargeLimit", 50)
-				CarModule.StartAction("stopCharge")
-				CarModule.StartAction("openChargePort")
-				CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
+				-- See if charging. If so stop
+				if var.GetNumber("ChargeStatus") == 1 then
+					var.Set("ChargeStatus", 0)
+					CarModule.StartAction("setChargeLimit", 50)
+					CarModule.StartAction("stopCharge")
+					CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
+				end
+				-- See if climate is on. If stop.
+				if var.GetNumber("ClimateStatus") == 1 then
+					var.Set("ClimateStatus", 0)
+					CarModule.StartAction("stopClimate")
+				end
+				-- Unlock the doors so the charge port will release the cable when disconnecting from charge station.
+				CarModule.StartAction("unlockDoors")
 				return 4, nil
 			</job>
 			<jobname>prepareDeparture</jobname>
@@ -129,7 +174,7 @@
 			<name>setChargeLimit</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction("setChargeLimit", lul_settings.newTargetValue or 90)
+				CarModule.StartAction("setChargeLimit", lul_settings.newTargetValue or "90")
 				return 4, nil
 			</job>
 			<jobname>setChargeLimit</jobname>
@@ -176,7 +221,7 @@
 			<name>setTemperature</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction("setTemperature", lul_settings.newTargetValue or 20)
+				CarModule.StartAction("setTemperature", lul_settings.newTargetValue or "20")
 				return 4, nil
 			</job>
 			<jobname>setTemperature</jobname>
@@ -194,9 +239,17 @@
 			<name>setAutoSoftwareInstall</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<run>
-				var.Set("AutoSoftwareInstall",lul_settings.newTargetValue or 0)
+				var.Set("AutoSoftwareInstall",lul_settings.newTargetValue or "0")
 			</run>
-			<jobname>setAutoSoftwareInstall</jobname>
+		</action>
+		<action>
+			<name>updateChildren</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.UpdateChildren()
+				return 4, nil
+			</job>
+			<jobname>updateChildren</jobname>
 		</action>
 		<action>
 			<name>Reset</name>
@@ -223,6 +276,50 @@
 				return 4, nil
 			</job>
 			<jobname>Poll</jobname>
+		</action>
+		<action>
+			<name>SetLogLevel</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<run>
+				local lev = tonumber(lul_settings.newLogLevel, 10) or 3
+				var.Set("LogLevel", lev)
+				log.Update(lev)
+			</run>
+		</action>
+		<action>
+			<serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+			<name>SetTarget</name>
+			<job>
+				TeslaCar_Child_SetTarget(lul_settings.newTargetValue, lul_device)
+				return 4, nil
+			</job>
+			<jobname>SetTarget</jobname>
+		</action>
+		<action>
+			<serviceId>urn:upnp-org:serviceId:Dimming1</serviceId>
+			<name>SetLoadLevelTarget</name>
+			<job>
+				TeslaCar_Child_SetLoadLevelTarget(lul_settings.newLoadlevelTarget, lul_device)
+			</job>
+			<jobname>SetLoadLevelTarget</jobname>
+		</action>
+		<action>
+			<serviceId>urn:upnp-org:serviceId:HVAC_UserOperatingMode1</serviceId>
+			<name>SetModeTarget</name>
+			<job>
+				-- On ALTUI I get NewMode?
+				local newMode = lul_settings.NewModeTarget or lul_settings.NewMode
+				TeslaCar_Child_SetModeTarget(newMode, lul_device)
+			</job>
+			<jobname>SetModeTarget</jobname>
+		</action>
+		<action>
+			<serviceId>urn:upnp-org:serviceId:TemperatureSetpoint1</serviceId>
+			<name>SetCurrentSetpoint</name>
+			<job>
+				TeslaCar_Child_SetCurrentSetpoint(lul_settings.NewCurrentSetpoint, lul_device)
+			</job>
+			<jobname>SetCurrentSetpoint</jobname>
 		</action>
 	</actionList>
 </implementation>

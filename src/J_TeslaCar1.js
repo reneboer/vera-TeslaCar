@@ -1,12 +1,16 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.0 10 January 2020
+// V1.4 10 February 2020
+//
+// V1.4 Changes:
+//		Added support for child device creations.
 //
 var TeslaCar = (function (api) {
 
 	var MOD_SID = 'urn:rboer-com:serviceId:TeslaCar1';
 	var moduleName = 'TeslaCar';
+	var devList = [{'value':'H','label':'HVAC'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'P','label':'Charge Port'},{'value':'C','label':'Charging'},{'value':'I','label':'Indoor temperature'},{'value':'O','label':'Outdoor temperature'}];
 
 	// Forward declaration.
     var myModule = {};
@@ -32,13 +36,11 @@ var TeslaCar = (function (api) {
 				var yesNo = [{'value':'0','label':'No'},{'value':'1','label':'Yes'}];
 				var chargeIntervals = [{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'},{'value':'20','label':'20 Min'},{'value':'30','label':'30 Min'},{'value':'60','label':'60 Min'},{'value':'90','label':'90 Min'},{'value':'120','label':'Two hours'},{'value':'240','label':'Four Hours'}];
 				var activeIntervals = [{'value':'1','label':'1 Min'},{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'}];
-				var limitIntervals = [{'value':'75','label':'75%'},{'value':'80','label':'80%'},{'value':'85','label':'85%'},{'value':'90','label':'95%'}];
-				var logLevel = [{'value':'1','label':'Error'},{'value':'2','label':'Warning'},{'value':'8','label':'Info'},{'value':'10','label':'Debug'},{'value':'11','label':'Test Debug'}];
-//				var retries = [{'value':'0','label':'None'},{'value':'1','label':'One'},{'value':'2','label':'Two'},{'value':'3','label':'Three'},{'value':'4','label':'Four'}];
+				var limitIntervals = [{'value':'75','label':'75%'},{'value':'80','label':'80%'},{'value':'85','label':'85%'},{'value':'90','label':'90%'}];
+				var logLevel = [{'value':'1','label':'Error'},{'value':'2','label':'Warning'},{'value':'8','label':'Info'},{'value':'10','label':'Debug'},{'value':'100','label':'Test Debug'}];
 
 				panelHtml += htmlAddInput(deviceID, 'Tesla Email', 30, 'Email') + 
 				htmlAddInput(deviceID, 'Tesla Password', 30, 'Password')+
-//				htmlAddPulldown(deviceID, 'Action retries', 'ActionRetries', retries)+
 				htmlAddPulldown(deviceID, 'Daily Poll ?', 'PI0', yesNo)+
 				htmlAddInput(deviceID, 'Daily Poll time (hh:mm)', 30, 'DailyPollTime')+ 
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging > 1hr', 'PI2', chargeIntervals)+
@@ -46,8 +48,30 @@ var TeslaCar = (function (api) {
 				htmlAddPulldown(deviceID, 'Poll Interval; Active', 'PI4', activeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Moving', 'PI5', activeIntervals)+
 				htmlAddPulldown(deviceID, 'Standard Charge Limit', 'StandardChargeLimit', limitIntervals)+
-//				htmlAddInput(deviceID, 'No Poll time window (hh:mm-hh:mm)', 30, 'NoPollWindow')+ 
 				htmlAddPulldown(deviceID, 'Log level', 'LogLevel', logLevel);
+			}
+			api.setCpanelContent(panelHtml);
+        } catch (e) {
+            Utils.logError('Error in '+moduleName+'.showSettings(): ' + e);
+        }
+	}
+	
+	function _showChildSettings() {
+		_init();
+        try {
+			var deviceID = api.getCpanelDeviceId();
+			var deviceObj = api.getDeviceObject(deviceID);
+			var panelHtml = '<div class="deviceCpanelSettingsPage">'
+				+ '<h3>Device #'+deviceID+'&nbsp;&nbsp;&nbsp;'+api.getDisplayedDeviceName(deviceID)+'</h3>';
+			if (deviceObj.disabled === '1' || deviceObj.disabled === 1) {
+				panelHtml += '<br>Plugin is disabled in Attributes.';
+			} else {	
+				panelHtml += 'Select the child devices you want and hit Save.<br>&nbsp;<br>';
+				var curSel = varGet(deviceID,'PluginHaveChildren');
+				for(var i=0;i<devList.length;i++){
+					panelHtml += htmlAddCheckBox(deviceID, devList[i].label+' Control', devList[i].value, curSel.indexOf(devList[i].value))
+				}
+				panelHtml += htmlAddButton(deviceID, 'updateChildSelections', 'Save');
 			}
 			api.setCpanelContent(panelHtml);
         } catch (e) {
@@ -133,7 +157,9 @@ var TeslaCar = (function (api) {
 	function  _updateVariable(vr,val) {
         try {
 			var deviceID = api.getCpanelDeviceId();
-			if (vr.startsWith('PI')) {
+			if (vr === 'LogLevel') {
+				api.performLuActionOnDevice(deviceID, MOD_SID, 'SetLogLevel',  { actionArguments: { newLogLevel: val }});
+			} else if (vr.startsWith('PI')) {
 				var ps = varGet(deviceID,'PollSettings');
 				var pa = ps.split(',');
 				pa[Number(vr.charAt(2))] = val;
@@ -141,11 +167,49 @@ var TeslaCar = (function (api) {
 			} else {
 				varSet(deviceID,vr,val);
 			}
+			application.sendCommandSaveUserData(true);
         } catch (e) {
             Utils.logError('Error in '+moduleName+'.updateVariable(): ' + e);
         }
 	}
 	
+	function _updateChildSelections(deviceID) {
+		// Get the selection from the pull down
+		var bChanged = false;
+		showBusy(true);
+		// Get checked boxes
+		var selIDs = [];
+		for(var i=0;i<devList.length;i++){
+			if ($("#"+moduleName+devList[i].value+"Checkbox").is(":checked")) {
+				selIDs.push(devList[i].value);
+			}
+		}
+		var sselIDs = selIDs.join();
+		var sorgIDs = varGet(deviceID,'PluginHaveChildren');
+		if (sselIDs != sorgIDs) {
+			varSet(deviceID,'PluginHaveChildren', sselIDs);
+			bChanged=true;
+		}	
+//		selIDs = htmlGetElemVal(deviceID, 'PluginEmbedChildren');
+//		orgIDs = varGet(deviceID, 'PluginEmbedChildren');
+//		if (selIDs != orgIDs) {
+//			varSet(deviceID,'PluginEmbedChildren', selIDs);
+//			bChanged=true;
+//		}	
+		// If we have changes in child devices, reload device.
+		if (bChanged) {
+			application.sendCommandSaveUserData(true);
+			setTimeout(function() {
+				api.performLuActionOnDevice(0, "urn:micasaverde-com:serviceId:HomeAutomationGateway1", "Reload", {});
+				htmlSetMessage("Changes to configuration made.<br>Now wait for reload to complete and then refresh your browser page!<p>New device(s) will be in the No Room section.",false);
+				showBusy(false);
+			}, 3000);	
+		} else {
+			showBusy(false);
+			htmlSetMessage("You have not made any changes.<br>No changes made.",true);
+		}
+	}
+
 	// Add a button html
 	function htmlAddButton(di, cb, lb) {
 		var html = '<div class="cpanelSaveBtnContainer labelInputContainer clearfix">'+	
@@ -209,6 +273,43 @@ var TeslaCar = (function (api) {
 		}
 	}
 
+
+	// Add a check box and label 
+	function htmlAddCheckBox(di, lb, di, chk) {
+		try {
+			var html = '<div class="clearfix labelInputContainer">'+
+					'<div class="pull-left">'+
+						'<input class="customCheckbox" type="checkbox" id="'+moduleName+di+'Checkbox" '+((chk != -1) ? 'checked' : '')+'>'+
+						'<label class="labelForCustomCheckbox" for="'+moduleName+di+'Checkbox">'+lb+'</label>'+
+					'</div>'+
+				   '</div>';
+			return html;
+		} catch (e) {
+			Utils.logError(moduleName+': htmlAddPulldown(): ' + e);
+		}
+	}
+
+	// Standard update for  plug-in pull down variable. We can handle multiple selections.
+	function htmlGetPulldownSelection(di, vr) {
+		var value = $('#'+moduleName+vr+di).val() || [];
+		return (typeof value === 'object')?value.join():value;
+	}
+
+	function htmlSetMessage(msg,error) {
+		try {
+			if (error === true) {
+				api.ui.showMessagePopupError(msg);
+			} else {
+				api.ui.showMessagePopup(msg,0);
+			}	
+		}	
+		catch (e) {	
+//			$("#ham_msg").html(msg+'<br>&nbsp;');
+			Utils.logError(moduleName+': htmlSetMessage(): ' + e);
+
+		}	
+	}
+
 	// Update variable in user_data and lu_status
 	function varSet(deviceID, varID, varVal, sid) {
 		if (typeof(sid) == 'undefined') { sid = MOD_SID; }
@@ -228,14 +329,33 @@ var TeslaCar = (function (api) {
             return '';
         }
 	}
+	
+	// Show/hide the interface busy indication.
+	function showBusy(busy) {
+		if (busy === true) {
+			try {
+				api.ui.showStartupModalLoading(); // version v1.7.437 and up
+			} catch (e) {
+				myInterface.showStartupModalLoading(); // For ALTUI support.
+			}
+		} else {
+			try {
+				api.ui.hideModalLoading(true);
+			} catch (e) {
+				myInterface.hideModalLoading(true); // For ALTUI support
+			}	
+		}
+	}
 
 	// Expose interface functions
     myModule = {
         init: _init,
         onBeforeCpanelClose: _onBeforeCpanelClose,
 		showSettings: _showSettings,
+		showChildSettings: _showChildSettings,
 		showStatus: _showStatus,
-		updateVariable : _updateVariable
+		updateVariable : _updateVariable,
+		updateChildSelections : _updateChildSelections
     };
     return myModule;
 })(api);

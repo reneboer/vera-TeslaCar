@@ -2,10 +2,18 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.2, 28 January 2020
+	V1.4, 10 February 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.4 Changes:
+		- Added support for child device creations.	
+		- Added Vera event triggers.
+		- Not checking awake state for each command when sending a series of commands.
+		- Some re-writes
+	V1.3 changes:
+		- Fix on auto software install
+		- Added Vera triggers in D_TeslaCar1.json
 	V1.2 changes:
 		- added command prepareDeparture that will stop charging and unlatch the power cable.
 	V1.1 changes:
@@ -13,10 +21,9 @@
 		- Similar for cable connected or not. Using derived value form charge_status instead for V6.
 		
 	To-do
-		1) Vera Event Triggers
-		2) child devices for locked, doors, windows, charging status.
+		2) If car woke up without this plugin action, poll every 30 seconds for five minutes to keep track of why.
 		3) Check for ChargPortLatched to be 1 status.
-		4)Doing a poll after each command in a few seconds is a bit much. Delay for like 5 sec after last command?
+		4) Doing a poll after each command in a few seconds is a bit much. Delay for like 5 sec after last command?
 		5) Smart, auto tuning preheat
 
 	https://www.teslaapi.io/
@@ -38,25 +45,31 @@ local json 		= require("dkjson")
 local https     = require("ssl.https")
 local http		= require("socket.http")
 local url 		= require("socket.url")
+local TeslaCar
+local CarModule
+local log
+local var
+local utils
+
+local SIDS = { 
+	MODULE	= "urn:rboer-com:serviceId:TeslaCar1",
+	ALTUI	= "urn:upnp-org:serviceId:altui1",
+	HA		= "urn:micasaverde-com:serviceId:HaDevice1",
+	ZW		= "urn:micasaverde-com:serviceId:ZWaveDevice1",
+	ENERGY	= "urn:micasaverde-com:serviceId:EnergyMetering1",
+	TEMP	= "urn:upnp-org:serviceId:TemperatureSensor1",
+	HVAC_U	= "urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
+	HEAT	= "urn:upnp-org:serviceId:TemperatureSetpoint1",
+	DOOR	= "urn:micasaverde-com:serviceId:SecuritySensor1",
+	SP		= "urn:upnp-org:serviceId:SwitchPower1",
+	DIM		= "urn:upnp-org:serviceId:Dimming1"
+}
 
 local pD = {
-	Version = "1.0",
-	SIDS = { 
-		MODULE = "urn:rboer-com:serviceId:TeslaCar1",
-		ALTUI = "urn:upnp-org:serviceId:altui1",
-		HA = "urn:micasaverde-com:serviceId:HaDevice1",
-		ZW = "urn:micasaverde-com:serviceId:ZWaveDevice1",
-		ENERGY = "urn:micasaverde-com:serviceId:EnergyMetering1"
-	},
+	Version = "1.4",
 	DEV = nil,
 	Description = "Tesla Car",
-	onOpenLuup = false,
-	lastVsrReqStarted = 0,
-	RetryDelay = 20,
-	RetryMax = 6,
-	PollDelay = 20,
-	RetryCount = 0,
-	PendingAction = ""
+	onOpenLuup = false
 }
 
 -- Define message when condition is not true
@@ -69,6 +82,115 @@ local messageMap = {
 	{var="LockedStatus",val="1",msg="Car Unlocked"},
 	{var="SunroofStatus",val="0",msg="Sunroof Open"}
 }
+
+-- Mapping of child devices and their update routines
+--[[
+	sf = state update function.
+	smt_af = Set State Mode action function
+	scs_af = Set Current Setpoint action function
+	sll_af = Set Load Level action function
+
+definition from J_TestlaCar1.js 
+	var devList = [{'value':'H','label':'HVAC'},{'value':'L','label':'Locks'},{'value':'W','label':'Windows'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'P','label':'Charge Port'},{'value':'C','label':'Charging'},{'value':'I','label':'Indoor temperature'},{'value':'O','label':'Outdoor temperature'}];
+]]
+local childDeviceMap = {
+	["H"] = { typ = "H", df = "D_Heater1", name = "Climate", devID = nil, 
+					sf = function(chDevID)
+						local it = var.GetNumber("InsideTemp")
+						local tt = var.GetNumber("ClimateTargetTemp")
+						var.Set("CurrentTemperature", it, SIDS.TEMP, chDevID)
+						var.Set("CurrentSetpoint", tt, SIDS.HEAT, chDevID)
+						local clim = var.GetNumber("ClimateStatus")
+						if clim == 0 then
+							var.Set("ModeStatus", "Off", SIDS.HVAC_U, chDevID)
+						else
+							var.Set("ModeStatus", "HeatOn", SIDS.HVAC_U, chDevID)
+						end
+					end,
+					smt_af = function(chDevID, newMode)
+						-- Climate on or off
+						if newMode == "Off" then
+							CarModule.StartAction("stopClimate")
+							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
+						elseif newMode == "HeatOn" then
+							CarModule.StartAction("startClimate")
+							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
+						else
+							log.Error("Unsupported newMode %s.", newMode)
+						end
+					end,
+					scs_af = function(chDevID, newTemp)
+						-- Set inside temp target
+						local minTemp = var.GetNumber("MinInsideTemp")
+						local maxTemp = var.GetNumber("MaxInsideTemp")
+						local newTemp = tonumber(newTemp,10)
+						if newTemp < minTemp then newTemp = minTemp end
+						if newTemp > maxTemp then newTemp = minTemp end
+						var.Set("CurrentSetpoint", newTemp, SIDS.HEAT, chDevID)
+						var.Set("ClimateTargetTemp", newTemp)
+						CarModule.StartAction("setTemperature", newTemp)
+					end
+			},
+	["L"] = { typ = "L", df = "D_BinaryLight1", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
+					sid = SIDS.SP, var = "Status", pVar = "LockedStatus" },
+	["W"] = { typ = "W", df = "D_BinaryLight1", name = "Windows Closed", devID = nil, st_ac0 = "ventWindows", st_ac1 = "closeWindows",
+					sf = function(chDevID)
+						local status = var.Get("WindowsMessage") == "Closed" and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
+	["R"] = { typ = "R", df = "D_BinaryLight1", name = "Sunroof Closed", devID = nil, st_ac0 = "ventSunroof", st_ac1 = "closeSunroof",
+					sf = function(chDevID)
+						local status = var.Get("DoorsMessage") == "Closed" and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
+	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc",
+					sf = function(chDevID)
+						local status = var.GetNumber("TrunkStatus") == 0 and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
+	["F"] = { typ = "F", df = "D_BinaryLight1", name = "Frunk Closed", devID = nil, st_ac0 = "unlockFrunc",
+					sf = function(chDevID)
+						local status = var.GetNumber("FrunkStatus") == 0 and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
+	["P"] = { typ = "P", df = "D_BinaryLight1", name = "Charge Port Closed", devID = nil, st_ac1 = "closeChargePort", st_ac0 = "openChargePort",
+					sf = function(chDevID)
+						local status = var.GetNumber("ChargePortDoorOpen") == 0 and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
+	["C"] = { typ = "C", df = "D_DimmableLight1", name = "Charging", devID = nil, st_ac0 = "stopCharge", st_ac1 = "startCharge",
+					sll_af = function(chDevID, newLoadlevelTarget)
+						-- Set SOC level to new target, but must be between 50 and 100%
+						local soc = tonumber(newLoadlevelTarget)
+						if soc < 50 then soc = 50 end
+						var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
+						var.Set("LoadLevelTarget", soc, SIDS.DIM, chDevID)
+						CarModule.StartAction("setChargeLimit", soc)
+					end,
+					sf = function(chDevID)
+						local status = var.Get("ChargeStatus")
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+						local soc = var.Get("ChargeLimitSOC")
+						var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
+						var.Set("LoadLevelTarget", soc, SIDS.DIM, chDevID)
+						var.Set("BatteryLevel", var.Get("BatteryLevel", SIDS.HA), SIDS.HA, chDevID)
+					end
+			},
+	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temperature", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "InsideTemp" },
+	["O"] = { typ = "O", df = "D_TemperatureSensor1", name = "Outside temperature", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "OutsideTemp" }
+}
+local childIDMap = {}
 
 -- Maps to icons definition in D_TeslaCar1.json for IconSet variable.
 local ICONS = {
@@ -85,13 +207,6 @@ local ICONS = {
 	MOVING = 9,
 	UNCONFIGURED = -1
 }
-
-
-local TeslaCar
-local CarModule
-local log
-local var
-
 
 -- API getting and setting variables and attributes from Vera more efficient.
 local function varAPI()
@@ -171,11 +286,11 @@ local onOpenLuup = false
 local taskHandle = -1
 
 	local function _update(level)
-		if level > 100 then
+		if level >= 100 then
 			def_file = true
 			def_debug = true
 			def_level = 10
-		elseif level > 10 then
+		elseif level >= 10 then
 			def_debug = true
 			def_file = false
 			def_level = 10
@@ -234,13 +349,13 @@ local taskHandle = -1
 	local function _debug(...)
 		if def_debug then
 			luup.log(def_prefix .. "_debug: " .. prot_format(-1,...), 50) 
---[[			
-			local fh = io.open("/tmp/TeslaCar.log","a")
-			local msg = os.date("%d/%m/%Y %X") .. ": " .. prot_format(-1,...)
-			fh:write(msg)
-			fh:write("\n")
-			fh:close()
---]]			
+			if def_file then
+				local fh = io.open("/tmp/TeslaCar.log","a")
+				local msg = os.date("%d/%m/%Y %X") .. ": " .. prot_format(-1,...)
+				fh:write(msg)
+				fh:write("\n")
+				fh:close()
+			end
 		end	
 	end
 	
@@ -289,6 +404,82 @@ local taskHandle = -1
 		DeviceMessage = _devmessage
 	}
 end 
+
+-- API to handle some Util functions
+local function utilsAPI()
+local floor = math.floor
+local _UI5 = 5
+local _UI6 = 6
+local _UI7 = 7
+local _UI8 = 8
+local _OpenLuup = 99
+
+	local function _init()
+	end	
+
+	-- See what system we are running on, some Vera or OpenLuup
+	local function _getui()
+		if luup.attr_get("openLuup",0) ~= nil then
+			return _OpenLuup
+		else
+			return luup.version_major
+		end
+		return _UI7
+	end
+	
+	local function _getmemoryused()
+		return floor(collectgarbage "count")         -- app's own memory usage in kB
+	end
+	
+	local function _setluupfailure(status,devID)
+		if luup.version_major < 7 then status = status ~= 0 end        -- fix UI5 status type
+		luup.set_failure(status,devID)
+	end
+
+	-- Luup Reload function for UI5,6 and 7
+	local function _luup_reload()
+		if luup.version_major < 6 then 
+			luup.call_action("urn:micasaverde-com:serviceId:HomeAutomationGateway1", "Reload", {}, 0)
+		else
+			luup.reload()
+		end
+	end
+	
+	-- Round up or down to whole number.
+	local function _round(n)
+		return floor((floor(n*2) + 1)/2)
+	end
+
+	local function _split(source, deli)
+		local del = deli or ","
+		local elements = {}
+		local pattern = '([^'..del..']+)'
+		string.gsub(source, pattern, function(value) elements[#elements + 1] = value end)
+		return elements
+	end
+  
+	local function _join(tab, deli)
+		local del = deli or ","
+		return table.concat(tab, del)
+	end
+
+	return {
+		Initialize = _init,
+		ReloadLuup = _luup_reload,
+		Round = _round,
+		GetMemoryUsed = _getmemoryused,
+		SetLuupFailure = _setluupfailure,
+		Split = _split,
+		Join = _join,
+		GetUI = _getui,
+		IsUI5 = _UI5,
+		IsUI6 = _UI6,
+		IsUI7 = _UI7,
+		IsUI8 = _UI8,
+		IsOpenLuup = _OpenLuup
+	}
+end 
+
 
 --- QUEUE STRUCTURE ---
 local Queue = {}
@@ -367,9 +558,10 @@ local function TeslaCarAPI()
 		["setChargeLimit"] 			= { method = "POST", url ="/command/set_charge_limit", data = function(p) return {percent=p} end },
 		["setMaximumChargeLimit"] 	= { method = "POST", url ="/command/charge_max_range" },
 		["setStandardChargeLimit"]  = { method = "POST", url ="/command/charge_standard" },
-		["openSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="open"} end },
+		["ventSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="vent"} end },
 		["closeSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="close"} end },
-		["setSunroof"] 				= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="move",percent=p} end },
+		["ventWindows"] 			= { method = "POST", url ="/command/window_control", data = function(p) return {command="vent",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
+		["closeWindows"] 			= { method = "POST", url ="/command/window_control", data = function(p) return {command="close",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
 		["updateSoftware"] 			= { method = "POST", url ="/command/schedule_software_update", data = function(p) return {offset_sec=120} end }
 	}
 	
@@ -396,7 +588,7 @@ local function TeslaCarAPI()
 	}
 	-- Found vehicle details
 	local vehicle_data = nil
-	local last_wake_up_time = nil
+	local last_wake_up_time = 0
 	local SendQueue = Queue.new()  -- Queue to hold commands to be handled.
 	
 	-- HTTPs request
@@ -513,12 +705,19 @@ log.Debug("HttpsRequest 4 %s", table.concat(result))
 
 	-- Get the vehicle awake status. Should be only command faster than 4 times per hour keeping car asleep.
 	local function _get_vehicle_awake_status()
-		local res, data, msg = _get_vehicle()
-		if res then
-			-- Return true is online.
-			return true, data.state=="online", "OK"
-		else
-			return res, data, msg
+		-- Only poll car if last confirmed awake is more than 50 seconds ago.
+		if (os.difftime(os.time(), last_wake_up_time) > 50) then
+			local res, data, msg = _get_vehicle()
+			if res then
+				-- Return true if online.
+				local awake =  data.state=="online"
+				if awake then last_wake_up_time = os.time()	end
+				return true, awake, "OK"
+			else
+				return res, data, msg
+			end
+		else	
+			return true, true, "OK"
 		end
 	end
 
@@ -590,9 +789,9 @@ log.Debug("SendCommandAsync, no cmd specified. Queue length %d.", Queue.len(Send
 				else
 					pop_t.cbf(pop_t.cmd, reply, msg)
 				end
-				-- If we have more on Q, send those with 1 sec interval not to hog Vera resources.
+				-- If we have more on Q, send those with 5 sec interval not to hog resources.
 				if (Queue.len(SendQueue) > 0) then
-					luup.call_delay("TSC_send_queued", 1)
+					luup.call_delay("TSC_send_queued", 5)
 				end	
 			end
 			return true, 200, "All commands sent."
@@ -627,10 +826,10 @@ log.Debug("SendCommandAsync, car is awake. Sending command %s", cmd)
 					else
 						cbf(cmd, reply, msg)
 					end
-					-- If we have more on Q by now, send those with 1 sec interval not to hog Vera resources.
+					-- If we have more on Q by now, send those with 5 sec interval not to hog Vera resources.
 					if (Queue.len(SendQueue) > 0) then
 log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
-						luup.call_delay("TSC_send_queued", 1)
+						luup.call_delay("TSC_send_queued", 5)
 					end	
 					return true, 200, "All commands sent."
 				elseif res and not reply then
@@ -823,7 +1022,7 @@ function TeslaCarModule()
 				end
 			end
 		end
-		var.Set("DisplayLine2", msg, pD.SIDS.ALTUI)
+		var.Set("DisplayLine2", msg, SIDS.ALTUI)
 	end
 	
 	-- Some generic conversion functions for variables
@@ -909,7 +1108,32 @@ function TeslaCarModule()
 		return 12742 * math.asin(math.sqrt(a)) -- 2 * R; R = 6371 km
 	end
 	
-		-- Set the GUI textual message texts based on currently known status variables
+	-- Update any child device variables.
+	local function _update_child_devices()
+
+		-- Loop over all configured child devices
+		for chDevID, chDevTyp in pairs (childIDMap) do
+			local chDev = childDeviceMap[chDevTyp]
+			if chDev then
+				log.Debug("Updating child device %s, %s", chDevID, chDev.name)
+				if chDev.sf then
+					-- Function defined, call that
+					chDev.sf(chDev.devID)
+				else
+					-- Get the value from parent variable
+					local val = var.Get(chDev.pVar)
+					log.Debug("parent variable %s, value %s, to update %s" ,chDev.pVar, val, chDev.var)
+					-- Update the child variable
+					var.Set(chDev.var, val, chDev.sid, chDev.devID)
+				end
+			else
+				-- Should never get here.
+				log.Warning("UpdateChildDevice, undefined child device type %s for child device ID %s", chDevTyp, chDevID)
+			end
+		end
+	end
+	
+	-- Set the GUI textual message texts based on currently known status variables
 	local function _update_message_texts()
 		local sf = string.format
 		
@@ -935,7 +1159,7 @@ function TeslaCarModule()
 		-- Set status messages
 		-- Convert remaining time to hh:mm time
 		local units = (var.Get("GuiDistanceUnits") == "km/hr" and "km" or "mi")
-		local bl = var.Get("BatteryLevel", pD.SIDS.HA)
+		local bl = var.Get("BatteryLevel", SIDS.HA)
 		local br = var.Get("BatteryRange")
 		local icon = ICONS.IDLE
 		if var.GetNumber("ChargeStatus") == 1 then
@@ -943,11 +1167,11 @@ function TeslaCarModule()
 			local hrs = math.floor(chrTime)
 			local mins = math.floor((chrTime - hrs) * 60)
 			var.Set("ChargeMessage", sf("Battery %s%%, range %s%s, time remaining %d:%02d.", bl, br, units, hrs, mins))
-			var.Set("DisplayLine2", sf("Charging; range %s%s, time remaining %d:%02d.", bl, units, hrs, mins), pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", sf("Charging; range %s%s, time remaining %d:%02d.", bl, units, hrs, mins), SIDS.ALTUI)
 			icon = ICONS.CHARGING
 		else	
 			if var.GetNumber("PowerSupplyConnected") == 1 and var.GetNumber("PowerPlugState") == 1 then
-				var.Set("DisplayLine2", "Power cable connected, not charging.", pD.SIDS.ALTUI)
+				var.Set("DisplayLine2", "Power cable connected, not charging.", SIDS.ALTUI)
 				icon = ICONS.CONNECTED
 			end
 			var.Set("ChargeMessage", sf("Battery %s%%, range %s%s.", bl, br, units))
@@ -955,7 +1179,7 @@ function TeslaCarModule()
 		-- Set user messages and icons based on actual values
 		if var.GetNumber("ClimateStatus") == 1 then
 			var.Set("ClimateMessage", "Climatizing on")
-			var.Set("DisplayLine2", "Climatizing on.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "Climatizing on.", SIDS.ALTUI)
 			icon = ICONS.CLIMATE
 		else
 			local inst = var.Get("InsideTemp")
@@ -966,7 +1190,7 @@ function TeslaCarModule()
 		local txt = buildStatusText(json.decode(var.Get("DoorsStatus")))
 		if txt then
 			var.Set("DoorsMessage", txt .. "open")
-			var.Set("DisplayLine2", "One or more doors are opened.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "One or more doors are opened.", SIDS.ALTUI)
 			icon = ICONS.DOORS
 		else	
 			var.Set("DoorsMessage", "Closed")
@@ -974,34 +1198,34 @@ function TeslaCarModule()
 		txt = buildStatusText(json.decode(var.Get("WindowsStatus")))
 		if txt then
 			var.Set("WindowsMessage", txt .. "open")
-			var.Set("DisplayLine2", "One or more windows are opened.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "One or more windows are opened.", SIDS.ALTUI)
 			icon = ICONS.WINDOWS
 		else	
 			var.Set("WindowsMessage", "Closed")
 		end
 		if var.GetNumber("FrunkStatus") == 1 then
 			var.Set("FrunkMessage", "Unlocked.")
-			var.Set("DisplayLine2", "Frunk is unlocked.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "Frunk is unlocked.", SIDS.ALTUI)
 			icon = ICONS.FRUNK
 		else	
 			var.Set("FrunkMessage", "Locked")
 		end
 		if var.GetNumber("TrunkStatus") == 1 then
 			var.Set("TrunkMessage", "Unlocked.")
-			var.Set("DisplayLine2", "Trunk is unlocked.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "Trunk is unlocked.", SIDS.ALTUI)
 			icon = ICONS.TRUNK
 		else	
 			var.Set("TrunkMessage", "Locked")
 		end
 		if var.GetNumber("LockedStatus") == 0 then
 			var.Set("LockedMessage", "Car is unlocked.")
-			var.Set("DisplayLine2", "Car is unlocked.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "Car is unlocked.", SIDS.ALTUI)
 			icon = ICONS.UNLOCKED
 		else	
 			var.Set("LockedMessage", "Locked")
 		end
 		if var.GetNumber("MovingStatus") == 1 then
-			var.Set("DisplayLine2", "Car is moving.", pD.SIDS.ALTUI)
+			var.Set("DisplayLine2", "Car is moving.", SIDS.ALTUI)
 			icon = ICONS.MOVING
 		else	
 			var.Set("LockedMessage", "Locked")
@@ -1014,6 +1238,8 @@ function TeslaCarModule()
 		elseif swStat == 2 then
 			var.Set("SoftwareMessage", "Version ".. var.Get("AvailableSoftwareVersion").. " ready for installation.")
 		elseif swStat == 3 then
+			var.Set("SoftwareMessage", "Scheduled version : ".. var.Get("AvailableSoftwareVersion"))
+		elseif swStat == 4 then
 			var.Set("SoftwareMessage", "Installing version : ".. var.Get("AvailableSoftwareVersion"))
 		end
 		var.Set("LastCarMessageTimestamp", os.time())
@@ -1164,6 +1390,8 @@ function TeslaCarModule()
 			var.Set("BatteryHeaterStatus", _bool_to_zero_one(state.battery_heater))
 			var.Set("ClimateStatus", _bool_to_zero_one(state.is_climate_on))
 			var.Set("InsideTemp", state.inside_temp or 0)
+			var.Set("MinInsideTemp", state.min_avail_temp or 0)
+			var.Set("MaxInsideTemp", state.max_avail_temp or 0)
 			var.Set("OutsideTemp",state.outside_temp or 0)
 			var.Set("ClimateTargetTemp", state.driver_temp_setting or 0)
 			var.Set("FrontDefrosterStatus", _bool_to_zero_one(state.is_front_defroster_on))
@@ -1240,7 +1468,7 @@ function TeslaCarModule()
 				var.Set("RemainingChargeTime", 0)
 			end
 			if state.battery_range then var.Set("BatteryRange", _convert_range_miles_to_units(state.battery_range, "D")) end
-			if state.battery_level then var.Set("BatteryLevel", state.battery_level , pD.SIDS.HA) end
+			if state.battery_level then var.Set("BatteryLevel", state.battery_level , SIDS.HA) end
 			if state.conn_charge_cable then
 				-- Is in api_version 7, but not before I think
 				if state.conn_charge_cable ~= "<invalid>" then
@@ -1279,6 +1507,7 @@ function TeslaCarModule()
 			var.Set("BatteryHeaterOn", _bool_to_zero_one(state.battery_heater_on))
 			var.Set("ChargeRate", state.charge_rate or 0)
 			var.Set("ChargePower", state.charger_power or 0)
+			var.Set("ChargeLimitSOC", state.charge_limit_soc or 90)
 			var.Set("ChargeStateTS", state.timestamp or 0)
 		end
 	end
@@ -1324,8 +1553,10 @@ function TeslaCarModule()
 				"status": "",
 				"status": "available",
 				"status": "installing",
+				"status": "scheduled",
 				"version": ""
 				"version": "2019.40.50.5"
+				"warning_time_remaining_ms": 102839
 			},
 			"speed_limit_mode": {
 				"active": false,
@@ -1334,6 +1565,8 @@ function TeslaCarModule()
 				"min_limit_mph": 50,
 				"pin_code_set": false
 			},
+			"sun_roof_percent_open": null,
+			"sun_roof_state": "unknown",
 			"timestamp": 1577196729609,
 			"valet_mode": false,
 			"valet_pin_needed": true,
@@ -1364,15 +1597,17 @@ function TeslaCarModule()
 				local swStat = 0
 				local swu = state.software_update
 				if swu.status == "" then
-					-- no thing to do.
+					-- nothing to do.
 				elseif swu.status == "available" then
 					if swu.download_perc == 100 then
 						swStat = 2
 					else
 						swStat = 1
 					end
-				elseif swu.status == "installing" then
+				elseif swu.status == "scheduled" then
 					swStat = 3
+				elseif swu.status == "installing" then
+					swStat = 4
 				end
 				if swu.version and swu.version ~= "" then
 					var.Set("AvailableSoftwareVersion", swu.version)
@@ -1386,9 +1621,9 @@ function TeslaCarModule()
 
 	-- Call backs for car request commands.
 	local function CM_CBS_Error(cmd,data,msg)
-		log.Error("Call back fail called: %s",msg)
+		log.Error("Call back fail called: %s",msg)-- It seems 504 can also be returned by Tesla API. Need to look at this.
 		if data == 504 then
-			-- Could not wake up cat
+			-- Could not wake up car
 			log.Error("Call back fail to wake up car: %s",msg)
 			_set_status_message("Failed to wake up car. Cmd "..cmd)
 		else	
@@ -1443,7 +1678,7 @@ function TeslaCarModule()
 --			var.Set("VehicleData", json.encode(resp))
 			-- Process overall response values
 			var.Set("CarName", resp.display_name)
-			var.Set("DisplayLine1","Car : "..resp.display_name, pD.SIDS.ALTUI)
+			var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
 			var.Set("VIN", resp.vin)
 			-- Process specific category states
 			_update_gui_settings(resp.gui_settings)
@@ -1453,6 +1688,7 @@ function TeslaCarModule()
 			_update_charge_state(resp.charge_state)
 			
 			_update_message_texts()
+			_update_child_devices()
 			deb_res = "OK"
 			status = true
 		else
@@ -1604,7 +1840,7 @@ function TeslaCarModule()
 				_update_car_status(force)
 			end
 			-- If we have software ready to install and auto install is on, send command to install
-			if swStat == 1 then
+			if swStat == 2 then
 				if var.GetNumber("AutoSoftwareInstall") == 1 then
 					_start_action("updateSoftware")
 				end
@@ -1623,7 +1859,7 @@ function TeslaCarModule()
 		var.Default("Email")
 		var.Default("Password") --store in attribute
 		var.Default("LogLevel", pD.LogLevel)
-		var.Default("PollSettings", "1,20,60,5,1,5") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active, Moving in minutes
+		var.Default("PollSettings", "1,20,15,5,1,5") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)
@@ -1650,6 +1886,7 @@ function TeslaCarModule()
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
 		var.Default("IconSet",ICONS.UNCONFIGURED)
+		var.Default("PluginHaveChildren")
 		
 		_G._poll = _poll
 		_G._daily_poll = _daily_poll
@@ -1666,6 +1903,7 @@ function TeslaCarModule()
 		ScheduledPoll = _scheduled_poll,
 		StartAction = _start_action,
 		UpdateCarStatus = _update_car_status,
+		UpdateChildren = _update_child_devices,
 		SetStatusMessage = _set_status_message,
 		Initialize = _init
 	}
@@ -1698,10 +1936,129 @@ function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_val
 			CarModule.Login()
 			CarModule.Poll()
 		end
-	elseif (strVariable == "LogLevel") then	
-		-- Set log level and debug flag if needed
-		local lev = tonumber(strNewVal, 10) or 3
-		log.Update(lev)
+	end
+end
+
+-- Handle child SetTarget actions
+local function TeslaCar_Child_SetTarget(newTargetValue, deviceID)
+	log.Debug("SetTarget for deviceID %s, newTargetValue %s.", deviceID, newTargetValue)
+	if childIDMap[deviceID] then
+		local chDev = childDeviceMap[childIDMap[deviceID]]
+		log.Debug("SetTarget Found child device %d, for type %s, name %s.", deviceID, chDev.typ, chDev.name)
+		local curVal = var.Get(chDev.pVar)
+		if curVal ~= newTargetValue then
+			-- Find default car action for child SetTarget
+			local ac = chDev.st_ac
+			if not ac then
+				ac = chDev["st_ac"..newTargetValue]
+			end
+			if ac then
+				CarModule.StartAction(ac)
+				var.Set("Target", newTargetValue, SIDS.SP, deviceID)
+				var.Set("Status", newTargetValue, SIDS.SP, deviceID)
+			else
+				log.Debug("No action defined for child device.")
+			end
+			-- Update the parent variable, next poll should fall back if failed.
+--			var.Set(chDev.pVar, newTargetValue)
+		else
+			log.Debug("SetTarget, value not changed (old %s, new %s). Ignoring action.", curVal, newTargetValue)
+		end
+	end
+end
+
+-- Handle child SetLoadLevelTarget actions
+local function TeslaCar_Child_SetLoadLevelTarget(newLoadlevelTarget, deviceID)
+	log.Debug("SetLoadLevelTarget for deviceID %s, newLoadlevelTarget %s.", deviceID, newLoadlevelTarget)
+	if childIDMap[deviceID] then
+		local chDev = childDeviceMap[childIDMap[deviceID]]
+		log.Debug("SetLoadLevelTarget Found child device %d, for type %s, name %s.", deviceID, chDev.typ, chDev.name)
+		if chDev.sll_af then
+			chDev.sll_af(deviceID, newLoadlevelTarget)
+		else
+			log.Debug("No action defined for child device.")
+		end
+	end
+end
+
+-- Handle child SetModeTarget actions
+local function TeslaCar_Child_SetModeTarget(newModeTarget, deviceID)
+	log.Debug("SetModeTarget for deviceID %s, newModeTarget %s.", deviceID, tostring(newModeTarget))
+	if childIDMap[deviceID] then
+		local chDev = childDeviceMap[childIDMap[deviceID]]
+		log.Debug("SetModeTarget Found child device %d, for type %s, name %s.", deviceID, chDev.typ, chDev.name)
+		if chDev.smt_af then
+			chDev.smt_af(deviceID, newModeTarget)
+		else
+			log.Debug("No action defined for child device.")
+		end
+	end
+end
+
+-- Handle child SetCurrentSetpoint actions
+local function TeslaCar_Child_SetCurrentSetpoint(newCurrentSetpoint, deviceID)
+	log.Debug("SetCurrentSetpoint for deviceID %s, newCurrentSetpoint %s.", deviceID, newCurrentSetpoint)
+	if childIDMap[deviceID] then
+		local chDev = childDeviceMap[childIDMap[deviceID]]
+		log.Debug("SetCurrentSetpoint Found child device %d, for type %s, name %s.", deviceID, chDev.typ, chDev.name)
+		if chDev.scs_af then
+			chDev.scs_af(deviceID, newCurrentSetpoint)
+		else
+			log.Debug("No action defined for child device.")
+		end
+	end
+end
+
+-- Create any of the configured child devices
+local function TeslaCar_CreateChilderen(disabled)
+	local childTypes = var.Get("PluginHaveChildren")
+	if childTypes == "" then 
+		-- Note: we must continue this routine when there are no child devices as we may have ones that need to be deleted.
+		log.Debug("No child devices to create.")
+	else
+		log.Debug("Child device types to create : %s.",childTypes)
+	end
+	local child_devices = luup.chdev.start(pD.DEV);				-- create child devices...
+	childTypes = childTypes .. ','
+	for chType in childTypes:gmatch("([^,]*),") do
+		if chType ~= "" then
+			local device = childDeviceMap[chType]
+			local altid = 'TSC'..pD.DEV..'_'..chType
+			if device then
+				local vartable = {
+					",disabled="..disabled,
+					SIDS.HA..",HideDeleteButton=1",
+					SIDS.MODULE..",ChildType="..chType
+				}
+				if chType == "H" then vartable[#vartable+1] = SIDS.TEMP..",Range=15,28/59,82;15,28/59,82;15,28/59,82" end
+				local name = "TSC: "..device.name
+				log.Debug("Child device id " .. altid .. " (" .. name .. "), type " .. chType)
+				luup.chdev.append(
+					pD.DEV, 					-- parent (this device)
+					child_devices, 				-- pointer from above "start" call
+					altid,						-- child Alt ID
+					name,						-- child device description 
+					"", 						-- serviceId (keep blank for UI7 restart avoidance)
+					device.df..".xml",			-- device file for given device
+					"",							-- Implementation file is common for all child devices. Handled by parent?
+					utils.Join(vartable, "\n"),	-- parameters to set 
+					false,						-- child devices can go in any room
+					false)						-- child devices is not hidden
+			end
+		end
+	end	
+	luup.chdev.sync(pD.DEV, child_devices)	-- any changes in configuration will cause a restart at this point
+
+	-- Get device IDs of childs created_at
+	for chDevID, d in pairs (luup.devices) do
+		if d.device_num_parent == pD.DEV then
+			local ct = var.Get("ChildType", SIDS.MODULE, chDevID)
+			if childDeviceMap[ct] then
+				log.Debug("Found child device %d, for type %s, name %s.", chDevID, ct, childDeviceMap[ct].name)
+				childDeviceMap[ct].devID = chDevID
+				childIDMap[chDevID] = ct
+			end
+		end
 	end
 end
 
@@ -1713,51 +2070,55 @@ function TeslaCarModule_Initialize(lul_device)
 	-- start Utility API's
 	log = logAPI()
 	var = varAPI()
-	var.Initialize(pD.SIDS.MODULE, pD.DEV)
+	utils = utilsAPI()
+	var.Initialize(SIDS.MODULE, pD.DEV)
 	log.Initialize(pD.Description, var.GetNumber("LogLevel"), true)
-
+	utils.Initialize()
+	
 	log.Info("device #%d is initializing!", tonumber(pD.DEV))
 
-	-- See if we are running on openLuup. If not stop.
-	if luup.attr_get("openLuup",0) ~= nil then
+	-- See if we are running on openLuup or UI7. If not stop.
+	if utils.GetUI() == utils.IsOpenLuup then
 		pD.onOpenLuup = true
 		log.Log("We are running on openLuup!!")
-	elseif luup.version_major == 7 then	
+	elseif utils.GetUI() == utils.IsUI7 then	
 		pD.onOpenLuup = false
 		log.Log("We are running on Vera UI7!!")
 	else	
 		log.Error("Not supporting Vera UI%s!! Sorry.",luup.version_major)
 		return false, "Not supporting Vera UI version", pD.Description
 	end
-		
+	
+	TeslaCar = TeslaCarAPI()
+	CarModule = TeslaCarModule()
+	CarModule.Initialize()
+
+	-- Create child devices
+	TeslaCar_CreateChilderen(var.GetAttribute("disabled"))
+	
 	-- See if user disabled plug-in 
 	if (var.GetAttribute("disabled") == 1) then
 		log.Warning("Init: Plug-in version %s - DISABLED",pD.Version)
 		-- Now we are done. Mark device as disabled
-		var.Set("DisplayLine2","Plug-in disabled", pD.SIDS.ALTUI)
-		luup.set_failure(0, pD.DEV)
+		var.Set("DisplayLine2","Plug-in disabled", SIDS.ALTUI)
+		utils.SetLuupFailure(0, pD.DEV)
 		return true, "Plug-in Disabled.", pD.Description
 	end	
+	CarModule.UpdateChildren()
 
-	TeslaCar = TeslaCarAPI()
-	CarModule = TeslaCarModule()
-
---	TeslaCar.Initialize()
-	CarModule.Initialize()
 	CarModule.Login()
 	CarModule.SetStatusMessage()
 	
 	-- Set watches on email and password as userURL needs to be erased when changed
-	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Email", pD.DEV)
-	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "Password", pD.DEV)
---	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "VIN", pD.DEV)
-	luup.variable_watch("TeslaCar_VariableChanged", pD.SIDS.MODULE, "LogLevel", pD.DEV)
+	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Email", pD.DEV)
+	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Password", pD.DEV)
+--	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "VIN", pD.DEV)
 
 	-- Start pollers
 	CarModule.DailyPoll(true)
 	CarModule.ScheduledPoll(true)
 
 	log.Log("TeslaCarModule_Initialize finished ")
-	luup.set_failure(0, pD.DEV)
+	utils.SetLuupFailure(0, pD.DEV)
 	return true, "Plug-in started.", pD.Description
 end

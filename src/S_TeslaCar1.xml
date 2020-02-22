@@ -176,6 +176,18 @@
 			<relatedStateVariable>ChargePortStatus</relatedStateVariable>
 		</action>
 		<action>
+			<name>ventSunroof</name>
+		</action>
+		<action>
+			<name>closeSunroof</name>
+		</action>
+		<action>
+			<name>ventWindows</name>
+		</action>
+		<action>
+			<name>closeWindows</name>
+		</action>
+		<action>
 			<name>startCharge</name>
 			<relatedStateVariable>ChargeStatus</relatedStateVariable>
 		</action>
@@ -240,10 +252,16 @@
 			<name>Poll</name>
 		</action>
 		<action>
+			<name>updateChildren</name>
+		</action>
+		<action>
 			<name>Reset</name>
 		</action>
 		<action>
 			<name>Login</name>
+		</action>
+		<action>
+			<name>SetLogLevel</name>
 		</action>
 	</actionList>
 </scpd>

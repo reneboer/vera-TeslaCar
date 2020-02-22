@@ -1,10 +1,8 @@
 <?xml version="1.0"?>
 <!-- 
- openLuup "TeslaCar" Plugin
+ "TeslaCar1" Plug-in
 
- Copyright (C) 2019  Rene Boer
-
- V1.0 24/11/2019
+ V1.4 11 February 2020
  
 -->
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -27,6 +25,26 @@
 				<serviceType>urn:schemas-rboer-com:serviceId:TeslaCar:1</serviceType>
 				<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 				<SCPDURL>S_TeslaCar1.xml</SCPDURL>
+			</service>
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:HVAC_UserOperatingMode:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:HVAC_UserOperatingMode1</serviceId>
+				<SCPDURL>S_HVAC_UserOperatingMode1.xml</SCPDURL>
+			</service>
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:TemperatureSetpoint:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:TemperatureSetpoint1</serviceId>
+				<SCPDURL>S_TemperatureSetpoint1.xml</SCPDURL>
+			</service>
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:SwitchPower:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+				<SCPDURL>S_SwitchPower1.xml</SCPDURL>
+			</service>
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:Dimming:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:Dimming1</serviceId>
+				<SCPDURL>S_Dimming1.xml</SCPDURL>
 			</service>
 		</serviceList>
 		<implementationList>
