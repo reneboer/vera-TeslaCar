@@ -1,8 +1,10 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.4 10 February 2020
+// V1.5 25 February 2020
 //
+// V1.5 Changes:
+//		Re-ordered child device labels and corrected label for Inside and Outside temps.
 // V1.4 Changes:
 //		Added support for child device creations.
 //
@@ -10,7 +12,7 @@ var TeslaCar = (function (api) {
 
 	var MOD_SID = 'urn:rboer-com:serviceId:TeslaCar1';
 	var moduleName = 'TeslaCar';
-	var devList = [{'value':'H','label':'HVAC'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'P','label':'Charge Port'},{'value':'C','label':'Charging'},{'value':'I','label':'Indoor temperature'},{'value':'O','label':'Outdoor temperature'}];
+	var devList = [{'value':'C','label':'Charging'},{'value':'P','label':'Charge Port'},{'value':'H','label':'Climate'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'I','label':'Inside temperature'},{'value':'O','label':'Outside temperature'}];
 
 	// Forward declaration.
     var myModule = {};

@@ -2,10 +2,13 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.4, 10 February 2020
+	V1.5, 25 February 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.5 Changes:
+		- Changed door lock child device to a D_DoorLock_NoPin
+		- Fixed issue with Car kept awake on Vera.
 	V1.4 Changes:
 		- Added support for child device creations.	
 		- Added Vera event triggers.
@@ -60,13 +63,13 @@ local SIDS = {
 	TEMP	= "urn:upnp-org:serviceId:TemperatureSensor1",
 	HVAC_U	= "urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
 	HEAT	= "urn:upnp-org:serviceId:TemperatureSetpoint1",
-	DOOR	= "urn:micasaverde-com:serviceId:SecuritySensor1",
+	DOOR	= "urn:micasaverde-com:serviceId:DoorLock1",
 	SP		= "urn:upnp-org:serviceId:SwitchPower1",
 	DIM		= "urn:upnp-org:serviceId:Dimming1"
 }
 
 local pD = {
-	Version = "1.4",
+	Version = "1.5",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false
@@ -91,7 +94,7 @@ local messageMap = {
 	sll_af = Set Load Level action function
 
 definition from J_TestlaCar1.js 
-	var devList = [{'value':'H','label':'HVAC'},{'value':'L','label':'Locks'},{'value':'W','label':'Windows'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'P','label':'Charge Port'},{'value':'C','label':'Charging'},{'value':'I','label':'Indoor temperature'},{'value':'O','label':'Outdoor temperature'}];
+var devList = [{'value':'H','label':'Climate'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'P','label':'Charge Port'},{'value':'C','label':'Charging'},{'value':'I','label':'Inside temperature'},{'value':'O','label':'Outside temperature'}]
 ]]
 local childDeviceMap = {
 	["H"] = { typ = "H", df = "D_Heater1", name = "Climate", devID = nil, 
@@ -131,8 +134,13 @@ local childDeviceMap = {
 						CarModule.StartAction("setTemperature", newTemp)
 					end
 			},
-	["L"] = { typ = "L", df = "D_BinaryLight1", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
-					sid = SIDS.SP, var = "Status", pVar = "LockedStatus" },
+	["L"] = { typ = "L", df = "D_DoorLock1", sid = SIDS.DOOR, json = "D_DoorLock_NoPin.json", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
+					sf = function(chDevID)
+						local status = var.GetNumber("LockedStatus")
+						var.Set("Status", status, SIDS.DOOR, chDevID)
+						var.Set("Target", status, SIDS.DOOR, chDevID)
+					end 
+			},
 	["W"] = { typ = "W", df = "D_BinaryLight1", name = "Windows Closed", devID = nil, st_ac0 = "ventWindows", st_ac1 = "closeWindows",
 					sf = function(chDevID)
 						local status = var.Get("WindowsMessage") == "Closed" and 1 or 0
@@ -187,8 +195,8 @@ local childDeviceMap = {
 						var.Set("BatteryLevel", var.Get("BatteryLevel", SIDS.HA), SIDS.HA, chDevID)
 					end
 			},
-	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temperature", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "InsideTemp" },
-	["O"] = { typ = "O", df = "D_TemperatureSensor1", name = "Outside temperature", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "OutsideTemp" }
+	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "InsideTemp" },
+	["O"] = { typ = "O", df = "D_TemperatureSensor1", name = "Outside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "OutsideTemp" }
 }
 local childIDMap = {}
 
@@ -1782,7 +1790,8 @@ function TeslaCarModule()
 		if readyToPoll then
 			log.Debug("Scheduled Poll, enter")
 			local interval, awake = 0, 0
-			local force = startup or false
+			local force = false
+			if startup == true then force = true end -- on Vera with luup.call_delay the paramter is never nil, but empty string "" is not specified.
 			local lastPollInt = os.time() - var.GetNumber("LastCarMessageTimestamp")
 			local prevAwake = var.GetNumber("CarIsAwake")
 			local swStat = var.GetNumber("SoftwareStatus")
@@ -1954,8 +1963,9 @@ local function TeslaCar_Child_SetTarget(newTargetValue, deviceID)
 			end
 			if ac then
 				CarModule.StartAction(ac)
-				var.Set("Target", newTargetValue, SIDS.SP, deviceID)
-				var.Set("Status", newTargetValue, SIDS.SP, deviceID)
+				local sid = chDev.sid or SIDS.SP
+				var.Set("Target", newTargetValue, sid, deviceID)
+				var.Set("Status", newTargetValue, sid, deviceID)
 			else
 				log.Debug("No action defined for child device.")
 			end
@@ -2031,6 +2041,8 @@ local function TeslaCar_CreateChilderen(disabled)
 					SIDS.MODULE..",ChildType="..chType
 				}
 				if chType == "H" then vartable[#vartable+1] = SIDS.TEMP..",Range=15,28/59,82;15,28/59,82;15,28/59,82" end
+				-- Overwrite default json if needed.
+				if device.json then vartable[#vartable+1] = ",device_json="..device.json end
 				local name = "TSC: "..device.name
 				log.Debug("Child device id " .. altid .. " (" .. name .. "), type " .. chType)
 				luup.chdev.append(

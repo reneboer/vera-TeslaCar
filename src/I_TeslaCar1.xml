@@ -134,11 +134,11 @@
 					CarModule.StartAction("stopCharge")
 					CarModule.StartAction("setChargeLimit", var.GetNumber("StandardChargeLimit"))
 				end
-				-- See if climate is on. If stop.
-				if var.GetNumber("ClimateStatus") == 1 then
-					var.Set("ClimateStatus", 0)
-					CarModule.StartAction("stopClimate")
-				end
+				-- See if climate is on. Do not stop this as climate will remain stopped when you start driving.
+--				if var.GetNumber("ClimateStatus") == 1 then
+--					var.Set("ClimateStatus", 0)
+--					CarModule.StartAction("stopClimate")
+--				end
 				-- Unlock the doors so the charge port will release the cable when disconnecting from charge station.
 				CarModule.StartAction("unlockDoors")
 				return 4, nil
@@ -288,6 +288,15 @@
 		</action>
 		<action>
 			<serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+			<name>SetTarget</name>
+			<job>
+				TeslaCar_Child_SetTarget(lul_settings.newTargetValue, lul_device)
+				return 4, nil
+			</job>
+			<jobname>SetTarget</jobname>
+		</action>
+		<action>
+			<serviceId>urn:micasaverde-com:serviceId:DoorLock1</serviceId>
 			<name>SetTarget</name>
 			<job>
 				TeslaCar_Child_SetTarget(lul_settings.newTargetValue, lul_device)
