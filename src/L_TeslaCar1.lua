@@ -2,10 +2,13 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.5, 25 February 2020
+	V1.6, 29 February 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.6 Changes:
+		- Increased http request time out to 60 seconds for slow 3G connections on older models.
+		- Fixed Daily Poll running at Vera start up.
 	V1.5 Changes:
 		- Changed door lock child device to a D_DoorLock_NoPin
 		- Fixed issue with Car kept awake on Vera.
@@ -24,6 +27,7 @@
 		- Similar for cable connected or not. Using derived value form charge_status instead for V6.
 		
 	To-do
+		1) It seems if car is a sleep for longer time, the startClimate command fails. Need to see why.
 		2) If car woke up without this plugin action, poll every 30 seconds for five minutes to keep track of why.
 		3) Check for ChargPortLatched to be 1 status.
 		4) Doing a poll after each command in a few seconds is a bit much. Delay for like 5 sec after last command?
@@ -32,6 +36,7 @@
 	https://www.teslaapi.io/
 	https://tesla-api.timdorr.com/
 	https://github.com/timdorr/tesla-api
+	http://visibletesla.com/Doc_v2/pages/GettingStarted.html
 	https://medium.com/@jhuang5132/a-beginners-guide-to-the-unofficial-tesla-api-a5b3edfe1467
 	https://github.com/mseminatore/TeslaJS
 	https://teslamotorsclub.com/tmc/threads/model-s-rest-api.13410/page-134
@@ -113,11 +118,11 @@ local childDeviceMap = {
 					smt_af = function(chDevID, newMode)
 						-- Climate on or off
 						if newMode == "Off" then
+							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
 							CarModule.StartAction("stopClimate")
-							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
 						elseif newMode == "HeatOn" then
-							CarModule.StartAction("startClimate")
 							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
+							CarModule.StartAction("startClimate")
 						else
 							log.Error("Unsupported newMode %s.", newMode)
 						end
@@ -614,7 +619,7 @@ log.Debug("HttpsRequest 2 body: %s",request_body)
 --log.Debug("HttpsRequest 2, no body ")		
 			ReqHdrs["content-length"] = "0"
 		end 
-		http.TIMEOUT = 15 
+		http.TIMEOUT = 60
 		local bdy,cde,hdrs,stts = https.request{
 			url = strURL, 
 			method = mthd,
@@ -622,7 +627,7 @@ log.Debug("HttpsRequest 2 body: %s",request_body)
 			source = ltn12.source.string(request_body),
 			headers = ReqHdrs
 		}
-log.Debug("HttpsRequest 3 %d", cde)		
+log.Debug("HttpsRequest 3 %s", cde)		
 		if cde ~= 200 then
 			return false, nil, cde
 		else
@@ -799,10 +804,15 @@ log.Debug("SendCommandAsync, no cmd specified. Queue length %d.", Queue.len(Send
 				end
 				-- If we have more on Q, send those with 5 sec interval not to hog resources.
 				if (Queue.len(SendQueue) > 0) then
+log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
 					luup.call_delay("TSC_send_queued", 5)
+					return true, 200, "More commands queued to send."
+				else	
+					return true, 200, "All commands sent."
 				end	
+			else	
+				return true, 200, "All commands sent."
 			end
-			return true, 200, "All commands sent."
 		else
 log.Debug("SendCommandAsync, command %s. Queue length %d.", cmd, Queue.len(SendQueue))
 			if (Queue.len(SendQueue) > 0) then
@@ -838,8 +848,10 @@ log.Debug("SendCommandAsync, car is awake. Sending command %s", cmd)
 					if (Queue.len(SendQueue) > 0) then
 log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
 						luup.call_delay("TSC_send_queued", 5)
+						return true, 200, "More commands queued to send."
+					else	
+						return true, 200, "All commands sent."
 					end	
-					return true, 200, "All commands sent."
 				elseif res and not reply then
 					-- It is not awake, wake it up, then send command. Push it on the queue.
 log.Debug("SendCommandAsync, car is asleep. Wake it up and queue command %s", cmd)
@@ -910,7 +922,8 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 			if res and reply then
 				-- It's awake, send the command(s) from the queue
 				log.Debug("Wake up loop #%d woke up car. Send command(s).", cnt)
-				_send_command_async(nil)
+				luup.call_delay("TSC_send_queued", 2)
+--				_send_command_async(nil)
 			elseif res then
 				-- Not awake yet retry in three seconds.
 				log.Debug("Loop #%d to wake up car.", cnt)
@@ -938,7 +951,7 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 		else
 			-- Wake up failed. Empty command queue.
 			local pop_t = Queue.pop(SendQueue)
-			pop_t.cbf(pop_t.cmd, 504, "Unable to wake up car in set time.")
+			pop_t.cbf(pop_t.cmd, 522, "Unable to wake up car in set time.")
 			Queue.drop(SendQueue)
 			log.Error("Unable to wake up car in set time.")
 		end
@@ -953,7 +966,8 @@ log.Debug("TSC_await_wakeup_vehicle enter",param)
 			if res and reply then
 				-- Car found and awake
 				log.Debug("Recheck loop #%d found car awake. Send command(s).", cnt)
-				_send_command_async(nil)
+				luup.call_delay("TSC_send_queued", 2)
+--				_send_command_async(nil)
 			elseif res and not reply then
 				-- Found, but awake yet. Try to wake up.
 				log.Debug("Loop #%d found car, but need to wake up car.", cnt)
@@ -1630,7 +1644,7 @@ function TeslaCarModule()
 	-- Call backs for car request commands.
 	local function CM_CBS_Error(cmd,data,msg)
 		log.Error("Call back fail called: %s",msg)-- It seems 504 can also be returned by Tesla API. Need to look at this.
-		if data == 504 then
+		if data == 522 then
 			-- Could not wake up car
 			log.Error("Call back fail to wake up car: %s",msg)
 			_set_status_message("Failed to wake up car. Cmd "..cmd)
@@ -1753,7 +1767,8 @@ function TeslaCarModule()
 	-- Execute daily poll if scheduled
 	local function _daily_poll(startup)
 		local sg = string.gsub
-		local startup = startup or false
+		local force = false
+		if startup == true then force = true end -- on Vera with luup.call_delay the paramter is never nil, but empty string "" is not specified.
 
 		log.Debug("Daily Poll, enter")
 		-- Schedule at next day if a time is configured
@@ -1761,17 +1776,19 @@ function TeslaCarModule()
 		if poll_time ~= "" then
 			log.Debug("Daily Poll, scheduling for %s.", poll_time)
 			luup.call_timer("_daily_poll", 2, poll_time .. ":00", "1,2,3,4,5,6,7")
-			if (not startup) and readyToPoll then
+			if (not force) and readyToPoll then
 				-- If not at start-up, poll car if enabled.
 				-- PollSettings [1] = DailyPoll Enabled
 				local pol = var.Get("PollSettings")
 				local pol_t = {}
 				sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
 				if pol_t[1] == "1" then
-					_update_car_status(true)
+					_poll()
 				else
 					log.Debug("Daily Poll, not enabled.")
-				end	
+				end
+			else
+				log.Debug("Daily Poll, not polling now.")
 			end
 		else
 			log.Debug("Daily Poll, no time set.")
@@ -1868,7 +1885,7 @@ function TeslaCarModule()
 		var.Default("Email")
 		var.Default("Password") --store in attribute
 		var.Default("LogLevel", pD.LogLevel)
-		var.Default("PollSettings", "1,20,15,5,1,5") -- Interval for; Daily Poll, Idle, Charging long, Charging Short, Active, Moving in minutes
+		var.Default("PollSettings", "1,20,15,5,1,5") --Daily Poll (1=Y,0=N), Interval for; Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)

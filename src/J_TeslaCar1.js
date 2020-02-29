@@ -111,6 +111,7 @@ var TeslaCar = (function (api) {
 				var lat = Number.parseFloat(varGet(deviceID, 'Latitude')).toFixed(4);
 				var lng = Number.parseFloat(varGet(deviceID, 'Longitude')).toFixed(4);
 				var clh = varGet(deviceID, 'LocationHome');
+				var awk = varGet(deviceID, 'CarIsAwake');
 				var lcst = varGet(deviceID, 'LastCarMessageTimestamp');
 				var ppls = varGet(deviceID, 'PowerPlugLockState');
 				var pps = varGet(deviceID, 'PowerPlugState');
@@ -135,12 +136,12 @@ var TeslaCar = (function (api) {
 				panelHtml += '<p><div class="col-12" style="overflow-x: auto;"><table class="table-responsive-OFF table-sm"><tbody>'+
 					'<tr><td>Tesla Car name </td><td>'+cn+'</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
-					'<tr><td>Last Car update received at </td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
+					'<tr><td>Last Car update received at&nbsp;&nbsp;</td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
+					'<tr><td>Awake status</td><td>'+(clh==='1'?'Awake':'Sleeping')+'</td></tr>'+
 					'<tr><td>Milage </td><td>'+mlg+' Km</td></tr>'+
 					'<tr><td> </td><td> </td></tr>'+
 					'<tr><td>Car location </td><td>'+(clh==='1'?'Home':'Away, Latitude : '+lat+', Longitude : '+lng)+'</td></tr>'+
-//					'<tr><td> </td><td> </td></tr>'+
 					'<tr><td>Power Connection Status </td><td>'+psm+'</td></tr>'+
 					'<tr><td>Climate Status </td><td>'+clms+'</td></tr>'+
 					'<tr><td>Locks Status </td><td>'+lcks+'</td></tr>'+
