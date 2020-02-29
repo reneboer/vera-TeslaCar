@@ -5,6 +5,4 @@ First release here. Is a usable basis for some automation intergration with open
 
 Some to-do's
  * Create wiki
- * Add Vera Event triggers
- * Allow for child devices for locked, charging and other options based on standard devices so Vera Apps will work with them.
  * Smart preheat function.
