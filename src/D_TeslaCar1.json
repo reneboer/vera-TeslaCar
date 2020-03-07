@@ -392,7 +392,45 @@
 						"Width": 55,
 						"Height": 20 
 					} 
-				}
+				},
+				{
+					"ControlType": "line_break"
+				},
+				{
+					"ControlType": "label",
+					"top": 1,
+					"left": 1,
+					"text_align": "left",
+					"Label": {
+						"text": "Refresh car status" 
+					},
+					"Display": {
+						"Top": 203,
+						"Left": 1,
+						"Width": 100,
+						"Height": 20 
+					} 
+				},
+				{
+                    "ControlType": "button",
+                    "top": "1",
+                    "left": "2",
+                    "Label": {
+                        "lang_tag": "cmd_Poll",
+                        "text": "Refresh"
+                    },
+                    "Display": {
+                        "Top": 203,
+                        "Left": 130,
+						"Width": 100,
+						"Height": 35 
+                    },
+                    "Command": {
+                        "Service": "urn:rboer-com:serviceId:TeslaCar1",
+                        "Action": "Poll",
+                        "Parameters": [ ]
+                    },
+                }
 			]
 		},
 		{

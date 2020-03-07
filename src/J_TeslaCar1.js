@@ -1,8 +1,12 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.5 25 February 2020
+// V1.7 6 March 2020
 //
+// V1.7 Changes:
+//		Added in service status to status tab.
+// V1.6 Changes:
+//		Added awake status to status tab.
 // V1.5 Changes:
 //		Re-ordered child device labels and corrected label for Inside and Outside temps.
 // V1.4 Changes:
@@ -123,6 +127,8 @@ var TeslaCar = (function (api) {
 				var frs = varGet(deviceID, 'FrunkMessage');
 				var mlg = varGet(deviceID, 'Mileage');
 				var wins = varGet(deviceID, 'WindowsMessage');
+				var srvs = varGet(deviceID, 'InServiceStatus');
+				var srve = varGet(deviceID, 'InServiceEtc');
 				var psm = 'Unknown';
 				if (psc === '1') {
 					psm = 'Charge power available';
@@ -135,12 +141,12 @@ var TeslaCar = (function (api) {
 				}
 				panelHtml += '<p><div class="col-12" style="overflow-x: auto;"><table class="table-responsive-OFF table-sm"><tbody>'+
 					'<tr><td>Tesla Car name </td><td>'+cn+'</td></tr>'+
-					'<tr><td> </td><td> </td></tr>'+
+					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>Last Car update received at&nbsp;&nbsp;</td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
-					'<tr><td> </td><td> </td></tr>'+
-					'<tr><td>Awake status</td><td>'+(clh==='1'?'Awake':'Sleeping')+'</td></tr>'+
+					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
+					'<tr><td>Awake status</td><td>'+(awk==='1'?'Awake':'Sleeping')+'</td></tr>'+
+					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>Milage </td><td>'+mlg+' Km</td></tr>'+
-					'<tr><td> </td><td> </td></tr>'+
 					'<tr><td>Car location </td><td>'+(clh==='1'?'Home':'Away, Latitude : '+lat+', Longitude : '+lng)+'</td></tr>'+
 					'<tr><td>Power Connection Status </td><td>'+psm+'</td></tr>'+
 					'<tr><td>Climate Status </td><td>'+clms+'</td></tr>'+
@@ -148,7 +154,8 @@ var TeslaCar = (function (api) {
 					'<tr><td>Doors Status </td><td>'+drs+'</td></tr>'+
 					'<tr><td>Trunk/Frunk Status </td><td>'+trs+'/'+frs+'</td></tr>'+
 					'<tr><td>Windows Status </td><td>'+wins+'</td></tr>'+
-					'<tr><td> </td><td> </td></tr>'+
+					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
+					'<tr><td>In Service</td><td>'+(srvs==='0'?'Not in service':'In service, ETC : '+srve)+'</td></tr>'+
 					'</tbody></table></div></p>';
 			}	
 			api.setCpanelContent(panelHtml);
