@@ -2,13 +2,15 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.7, 6 March 2020
+	V1.8, 7 March 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.8 Changes:
+		- Temperatures are converted from API standard Celsius to Vera's temp units (C or F) and back.
 	V1.7 Changes:
 		- Added new service_data command to get car service data.
-		- Added retry if Tesla API returns 408 or 502.
+		- Added retry if Tesla API returns 408, 502 or 504.
 		- Better polling if car woke up.
 		- Reduced polling after multiple commands are sent.
 		- Improved login with retry.
@@ -34,16 +36,12 @@
 		
 	To-do
 		3) Check for ChargPortLatched to be 1 status.
-		4) Doing a poll after each command in a few seconds is a bit much. Delay for like 5 sec after last command?
 		5) Smart, auto tuning preheat
 
 	https://www.teslaapi.io/
 	https://tesla-api.timdorr.com/
 	https://github.com/timdorr/tesla-api
-	http://visibletesla.com/Doc_v2/pages/GettingStarted.html
-	https://medium.com/@jhuang5132/a-beginners-guide-to-the-unofficial-tesla-api-a5b3edfe1467
 	https://github.com/mseminatore/TeslaJS
-	https://teslamotorsclub.com/tmc/threads/model-s-rest-api.13410/page-134
 	https://support.teslafi.com/knowledge-bases/2/articles/640-enabling-sleep-settings-to-limit-vampire-loss
 	https://github.com/dirkvm/teslams
 	https://github.com/zabuldon/teslajsonpy/tree/master/teslajsonpy
@@ -56,7 +54,7 @@ local ltn12 	= require("ltn12")
 local json 		= require("dkjson")
 local https     = require("ssl.https")
 local http		= require("socket.http")
-local url 		= require("socket.url")
+--local url 		= require("socket.url")
 local TeslaCar
 local CarModule
 local log
@@ -82,6 +80,7 @@ local pD = {
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
+	veraTemperatureScale = "C",
 	pwdMessage = "Check UID/PWD in settings",
 	retryLoginMessage = "Login failed, retrying...",
 	failedLoginMessage = "Login failed, check UID/PWD."
@@ -420,7 +419,8 @@ end
 
 -- API to handle some Util functions
 local function utilsAPI()
-local floor = math.floor
+local flr = math.floor
+local cl = math.ceil
 local _UI5 = 5
 local _UI6 = 6
 local _UI7 = 7
@@ -441,7 +441,7 @@ local _OpenLuup = 99
 	end
 	
 	local function _getmemoryused()
-		return floor(collectgarbage "count")         -- app's own memory usage in kB
+		return flr(collectgarbage "count")         -- app's own memory usage in kB
 	end
 	
 	local function _setluupfailure(status,devID)
@@ -458,9 +458,12 @@ local _OpenLuup = 99
 		end
 	end
 	
-	-- Round up or down to whole number.
-	local function _round(n)
-		return floor((floor(n*2) + 1)/2)
+	-- Round up or down to specified decimals.
+	local function _round(value, decimals)
+		local power = 10^decimals
+		return (value >= 0) and
+				(flr(value * power) / power) or
+				(cl(value * power) / power)
 	end
 
 	local function _split(source, deli)
@@ -470,7 +473,15 @@ local _OpenLuup = 99
 		string.gsub(source, pattern, function(value) elements[#elements + 1] = value end)
 		return elements
 	end
+	
+	local function _ctof(temp)
+		return _round(temp * 9/5 + 32,0)
+	end	
   
+	local function _ftoc(temp)
+		return _round((temp - 32) * 5 / 9,1)
+	end	
+
 	local function _join(tab, deli)
 		local del = deli or ","
 		return table.concat(tab, del)
@@ -480,6 +491,8 @@ local _OpenLuup = 99
 		Initialize = _init,
 		ReloadLuup = _luup_reload,
 		Round = _round,
+		CtoF = _ctof,
+		FtoC = _ftoc,
 		GetMemoryUsed = _getmemoryused,
 		SetLuupFailure = _setluupfailure,
 		Split = _split,
@@ -1072,6 +1085,17 @@ function TeslaCarModule()
 			return math.floor(miles)
 		end	
 	end
+	
+	-- It looks like Tesla always reports temp in Celsius, so convert if Vera units are Fahrenheit
+	local _convert_temp_units = function(temp)
+		local temp = temp or -99
+		if pD.veraTemperatureScale ~= "C" then
+			return utils.CtoF(temp)
+		else
+			return temp
+		end	
+	end
+	
 
 	-- Logoff, This will fore a new login
 	local function _reset()
@@ -1327,11 +1351,11 @@ function TeslaCarModule()
 		if state then
 			var.Set("BatteryHeaterStatus", _bool_to_zero_one(state.battery_heater))
 			var.Set("ClimateStatus", _bool_to_zero_one(state.is_climate_on))
-			var.Set("InsideTemp", state.inside_temp or 0)
-			var.Set("MinInsideTemp", state.min_avail_temp or 0)
-			var.Set("MaxInsideTemp", state.max_avail_temp or 0)
-			var.Set("OutsideTemp",state.outside_temp or 0)
-			var.Set("ClimateTargetTemp", state.driver_temp_setting or 0)
+			var.Set("InsideTemp", _convert_temp_units(state.inside_temp))
+			var.Set("MinInsideTemp", _convert_temp_units(state.min_avail_temp))
+			var.Set("MaxInsideTemp", _convert_temp_units(state.max_avail_temp))
+			var.Set("OutsideTemp",_convert_temp_units(state.outside_temp))
+			var.Set("ClimateTargetTemp", _convert_temp_units(state.driver_temp_setting))
 			var.Set("FrontDefrosterStatus", _bool_to_zero_one(state.is_front_defroster_on))
 			var.Set("RearDefrosterStatus", _bool_to_zero_one(state.is_rear_defroster_on))
 			var.Set("PreconditioningStatus", _bool_to_zero_one(state.is_preconditioning))
@@ -1954,7 +1978,8 @@ end
 -- Initialize plug-in
 function TeslaCarModule_Initialize(lul_device)
 	pD.DEV = lul_device
-
+	pD.veraTemperatureScale = string.upper(luup.attr_get("TemperatureFormat",0)) or "C"
+	
 	-- start Utility API's
 	log = logAPI()
 	var = varAPI()

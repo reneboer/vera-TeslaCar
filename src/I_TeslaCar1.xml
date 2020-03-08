@@ -221,7 +221,10 @@
 			<name>setTemperature</name>
 			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
 			<job>
-				CarModule.StartAction("setTemperature", lul_settings.newTargetValue or "20")
+				-- Need to convert temp as Tesla uses C
+				local temp = lul_settings.newTargetValue
+				if pD.veraTemperatureScale ~= "C" then temp = utils.FtoC(temp) end	
+				CarModule.StartAction("setTemperature", temp or "20")
 				return 4, nil
 			</job>
 			<jobname>setTemperature</jobname>
@@ -326,7 +329,10 @@
 			<serviceId>urn:upnp-org:serviceId:TemperatureSetpoint1</serviceId>
 			<name>SetCurrentSetpoint</name>
 			<job>
-				TeslaCar_Child_SetCurrentSetpoint(lul_settings.NewCurrentSetpoint, lul_device)
+				-- Need to convert temp as Tesla uses C
+				local temp = lul_settings.NewCurrentSetpoint
+				if pD.veraTemperatureScale ~= "C" then temp = utils.FtoC(temp) end	
+				TeslaCar_Child_SetCurrentSetpoint(temp, lul_device)
 			</job>
 			<jobname>SetCurrentSetpoint</jobname>
 		</action>
