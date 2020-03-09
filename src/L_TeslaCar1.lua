@@ -50,10 +50,10 @@
 	
 ]]
 
-local ltn12 	= require("ltn12")
-local json 		= require("dkjson")
-local https     = require("ssl.https")
-local http		= require("socket.http")
+local ltn12	= require("ltn12")
+local json	= require("dkjson")
+local https	= require("ssl.https")
+local http	= require("socket.http")
 --local url 		= require("socket.url")
 local TeslaCar
 local CarModule
@@ -64,19 +64,19 @@ local utils
 local SIDS = { 
 	MODULE	= "urn:rboer-com:serviceId:TeslaCar1",
 	ALTUI	= "urn:upnp-org:serviceId:altui1",
-	HA		= "urn:micasaverde-com:serviceId:HaDevice1",
-	ZW		= "urn:micasaverde-com:serviceId:ZWaveDevice1",
+	HA	= "urn:micasaverde-com:serviceId:HaDevice1",
+	ZW	= "urn:micasaverde-com:serviceId:ZWaveDevice1",
 	ENERGY	= "urn:micasaverde-com:serviceId:EnergyMetering1",
 	TEMP	= "urn:upnp-org:serviceId:TemperatureSensor1",
 	HVAC_U	= "urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
 	HEAT	= "urn:upnp-org:serviceId:TemperatureSetpoint1",
 	DOOR	= "urn:micasaverde-com:serviceId:DoorLock1",
-	SP		= "urn:upnp-org:serviceId:SwitchPower1",
-	DIM		= "urn:upnp-org:serviceId:Dimming1"
+	SP	= "urn:upnp-org:serviceId:SwitchPower1",
+	DIM	= "urn:upnp-org:serviceId:Dimming1"
 }
 
 local pD = {
-	Version = "1.5",
+	Version = "1.8",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
