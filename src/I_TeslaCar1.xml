@@ -1,11 +1,8 @@
 <?xml version="1.0"?>
 <!-- 
-	Vera/openLuup "TeslaCar" Plug-in 
-	
+	I_TeslaCar1.xml; Vera/openLuup "TeslaCar" Plug-in 
 	Written by Rene Boer
-	
-	V1.0 25 January 2020
-	
+	V1.9 21 March 2020
 -->
 <implementation>
 	<settings>
@@ -67,6 +64,15 @@
 				return 4, nil
 			</job>
 			<jobname>unlockTrunc</jobname>
+		</action>
+		<action>
+			<name>lockTrunc</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				CarModule.StartAction("lockTrunc")
+				return 4, nil
+			</job>
+			<jobname>lockTrunc</jobname>
 		</action>
 		<action>
 			<name>openChargePort</name>

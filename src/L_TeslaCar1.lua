@@ -2,12 +2,19 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.8, 7 March 2020
+	V1.9, 21 March 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.9 Changes:
+		- Improved car wake up and send queue handling.
+		- Changed call back to one handler for all with registrable call backs for specific commands as needed.
+		- Added close trunk command for Model S
+		- Module interfaces cleanup.
 	V1.8 Changes:
 		- Temperatures are converted from API standard Celsius to Vera's temp units (C or F) and back.
+		- Retry command in 15 sec if the return is 200, but message could_not_wake_buses
+		- Allow idle timer to be set as default 20 minutes may not be sufficient.
 	V1.7 Changes:
 		- Added new service_data command to get car service data.
 		- Added retry if Tesla API returns 408, 502 or 504.
@@ -35,6 +42,7 @@
 		- Similar for cable connected or not. Using derived value form charge_status instead for V6.
 		
 	To-do
+		1) On models S & X, when trunk is open, actuate_trunk will close it.
 		3) Check for ChargPortLatched to be 1 status.
 		5) Smart, auto tuning preheat
 
@@ -50,10 +58,10 @@
 	
 ]]
 
-local ltn12	= require("ltn12")
-local json	= require("dkjson")
-local https	= require("ssl.https")
-local http	= require("socket.http")
+local ltn12 	= require("ltn12")
+local json 		= require("dkjson")
+local https     = require("ssl.https")
+local http		= require("socket.http")
 --local url 		= require("socket.url")
 local TeslaCar
 local CarModule
@@ -61,22 +69,31 @@ local log
 local var
 local utils
 
+-- Misc delays and retries on car communication
+local TCS_RETRY_DELAY			= 5			-- Between retries of failed commands
+local TCS_POLL_SUCCESS_DELAY	= 10		-- To poll for new status after command succesfully send
+local TCS_MAX_RETRIES			= 10		-- Maximum number of command send retries.
+local TCS_MAX_WAKEUP_RETRIES	= 25		-- Maximum number of wake up resend attempts before giving up.
+local TCS_WAKEUP_CHECK_INTERVAL	= 10		-- Time to see if wakeUp command woke up car.
+local TCS_SEND_INTERVAL			= 1			-- Time to send next command from queue.
+local TCS_HTTP_TIMEOUT			= 60		-- Timeout on http requests
+
 local SIDS = { 
 	MODULE	= "urn:rboer-com:serviceId:TeslaCar1",
 	ALTUI	= "urn:upnp-org:serviceId:altui1",
-	HA	= "urn:micasaverde-com:serviceId:HaDevice1",
-	ZW	= "urn:micasaverde-com:serviceId:ZWaveDevice1",
+	HA		= "urn:micasaverde-com:serviceId:HaDevice1",
+	ZW		= "urn:micasaverde-com:serviceId:ZWaveDevice1",
 	ENERGY	= "urn:micasaverde-com:serviceId:EnergyMetering1",
 	TEMP	= "urn:upnp-org:serviceId:TemperatureSensor1",
 	HVAC_U	= "urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
 	HEAT	= "urn:upnp-org:serviceId:TemperatureSetpoint1",
 	DOOR	= "urn:micasaverde-com:serviceId:DoorLock1",
-	SP	= "urn:upnp-org:serviceId:SwitchPower1",
-	DIM	= "urn:upnp-org:serviceId:Dimming1"
+	SP		= "urn:upnp-org:serviceId:SwitchPower1",
+	DIM		= "urn:upnp-org:serviceId:Dimming1"
 }
 
 local pD = {
-	Version = "1.8",
+	Version = "1.9",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
@@ -123,12 +140,19 @@ local childDeviceMap = {
 					end,
 					smt_af = function(chDevID, newMode)
 						-- Climate on or off
+						local cmd = ""
 						if newMode == "Off" then
-							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
-							CarModule.StartAction("stopClimate")
+							cmd = "stopClimate"
 						elseif newMode == "HeatOn" then
-							var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
-							CarModule.StartAction("startClimate")
+							cmd = "startClimate"
+						end
+						if cmd ~= "" then
+							local res, cde, data, msg = CarModule.StartAction(cmd)
+							if res then
+								var.Set("ModeStatus", newMode, SIDS.HVAC_U, chDevID)
+							else
+								log.Warning("Heater Mode command %s failed. Error #%d, %s", cmd, cde, msg)
+							end
 						else
 							log.Error("Unsupported newMode %s.", newMode)
 						end
@@ -139,10 +163,14 @@ local childDeviceMap = {
 						local maxTemp = var.GetNumber("MaxInsideTemp")
 						local newTemp = tonumber(newTemp,10)
 						if newTemp < minTemp then newTemp = minTemp end
-						if newTemp > maxTemp then newTemp = minTemp end
-						var.Set("CurrentSetpoint", newTemp, SIDS.HEAT, chDevID)
-						var.Set("ClimateTargetTemp", newTemp)
-						CarModule.StartAction("setTemperature", newTemp)
+						if newTemp > maxTemp then newTemp = maxTemp end
+						local res, cde, data, msg = CarModule.StartAction("setTemperature", newTemp)
+						if res then
+							var.Set("CurrentSetpoint", newTemp, SIDS.HEAT, chDevID)
+							var.Set("ClimateTargetTemp", newTemp)
+						else
+							log.Warning("Heater Temp command failed. Error #%d, %s", cde, msg)
+						end
 					end
 			},
 	["L"] = { typ = "L", df = "D_DoorLock1", sid = SIDS.DOOR, json = "D_DoorLock_NoPin.json", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
@@ -166,7 +194,7 @@ local childDeviceMap = {
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
-	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc",
+	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc", st_ac1 = "lockTrunc",
 					sf = function(chDevID)
 						local status = var.GetNumber("TrunkStatus") == 0 and 1 or 0
 						var.Set("Status", status, SIDS.SP, chDevID)
@@ -192,9 +220,13 @@ local childDeviceMap = {
 						-- Set SOC level to new target, but must be between 50 and 100%
 						local soc = tonumber(newLoadlevelTarget)
 						if soc < 50 then soc = 50 end
-						var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
-						var.Set("LoadLevelTarget", soc, SIDS.DIM, chDevID)
-						CarModule.StartAction("setChargeLimit", soc)
+						local res, cde, data, msg = CarModule.StartAction("setChargeLimit", soc)
+						if res then
+							var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
+							var.Set("LoadLevelTarget", soc, SIDS.DIM, chDevID)
+						else
+							log.Warning("Charge level SOC command %s failed. Error #%d, %s", cmd, cde, msg)
+						end
 					end,
 					sf = function(chDevID)
 						local status = var.Get("ChargeStatus")
@@ -528,6 +560,14 @@ function Queue.pop(list)
 	return value
 end
 
+-- Just get first item of queue, do not remove it.
+function Queue.peak(list)
+	local first = list.first
+	if first > list.last then return nil end
+	local value = list[first]
+	return value
+end
+
 function Queue.len(list)
 	return list.last - list.first + 1
 end
@@ -555,177 +595,213 @@ Adviced polling:
 local function TeslaCarAPI()
 	-- Map commands to details
 	local commands = {
-		["authenticate"] 			= { method = "POST", url ="/oauth/token" },
-		["logoff"] 					= { method = "POST", url ="/oauth/revoke" },
-		["listCars"] 				= { method = "GET", url ="/api/1/vehicles" },
-		["wakeUp"] 					= { method = "POST", url ="/wake_up" },
+		["listCars"]				= { method = "GET" },
 		
-		["getVehicleDetails"] 		= { method = "GET", url ="/vehicle_data" },
-		["getServiceData"] 			= { method = "GET", url ="/service_data" },
-		["getChargeState"] 			= { method = "GET", url ="/data_request/charge_state" },
-		["getClimateState"] 		= { method = "GET", url ="/data_request/climate_state" },
-		["getDriveState"] 			= { method = "GET", url ="/data_request/drive_state" },
-		["getMobileEnabled"] 		= { method = "GET", url ="/mobile_enabled" },
-		["getGuiSettings"] 			= { method = "GET", url ="/data_request/gui_settings" },
-
-		["startCharge"] 			= { method = "POST", url ="/command/charge_start" },
-		["stopCharge"] 				= { method = "POST", url ="/command/charge_stop" },
-		["startClimate"] 			= { method = "POST", url ="/command/auto_conditioning_start" },
-		["stopClimate"] 			= { method = "POST", url ="/command/auto_conditioning_stop" },
-		["unlockDoors"] 			= { method = "POST", url ="/command/door_unlock" },
-		["lockDoors"] 				= { method = "POST", url ="/command/door_lock" },
-		["honkHorn"] 				= { method = "POST", url ="/command/honk_horn" },
-		["flashLights"] 			= { method = "POST", url ="/command/flash_lights" },
-		["unlockFrunc"]				= { method = "POST", url ="/command/actuate_trunk", data = function(p) return {which_trunk="front"} end },
-		["unlockTrunc"] 			= { method = "POST", url ="/command/actuate_trunk", data = function(p) return {which_trunk="rear"} end },
-		["openChargePort"]		 	= { method = "POST", url ="/command/charge_port_door_open" },
-		["closeChargePort"]		 	= { method = "POST", url ="/command/charge_port_door_close" },
-		["setTemperature"] 			= { method = "POST", url ="/command/set_temps", data = function(p) return {driver_temp=p,passenger_temp=p} end },
-		["setChargeLimit"] 			= { method = "POST", url ="/command/set_charge_limit", data = function(p) return {percent=p} end },
-		["setMaximumChargeLimit"] 	= { method = "POST", url ="/command/charge_max_range" },
-		["setStandardChargeLimit"]  = { method = "POST", url ="/command/charge_standard" },
-		["ventSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="vent"} end },
-		["closeSunroof"] 			= { method = "POST", url ="/command/sun_roof_control", data = function(p) return {state="close"} end },
-		["ventWindows"] 			= { method = "POST", url ="/command/window_control", data = function(p) return {command="vent",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
-		["closeWindows"] 			= { method = "POST", url ="/command/window_control", data = function(p) return {command="close",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
-		["updateSoftware"] 			= { method = "POST", url ="/command/schedule_software_update", data = function(p) return {offset_sec=120} end }
+		["wakeUp"]					= { method = "POST", url ="wake_up" },
+		["getVehicleDetails"]		= { method = "GET", url ="vehicle_data" },
+		["getServiceData"]			= { method = "GET", url ="service_data" },
+		["getChargeState"]			= { method = "GET", url ="data_request/charge_state" },
+		["getClimateState"]			= { method = "GET", url ="data_request/climate_state" },
+		["getDriveState"]			= { method = "GET", url ="data_request/drive_state" },
+		["getMobileEnabled"]		= { method = "GET", url ="mobile_enabled" },
+		["getGuiSettings"]			= { method = "GET", url ="data_request/gui_settings" },
+		["startCharge"]				= { method = "POST", url ="command/charge_start" },
+		["stopCharge"]				= { method = "POST", url ="command/charge_stop" },
+		["startClimate"]			= { method = "POST", url ="command/auto_conditioning_start" },
+		["stopClimate"]				= { method = "POST", url ="command/auto_conditioning_stop" },
+		["unlockDoors"]				= { method = "POST", url ="command/door_unlock" },
+		["lockDoors"]				= { method = "POST", url ="command/door_lock" },
+		["honkHorn"]				= { method = "POST", url ="command/honk_horn" },
+		["flashLights"]				= { method = "POST", url ="command/flash_lights" },
+		["unlockFrunc"]				= { method = "POST", url ="command/actuate_trunk", data = function(p) return {which_trunk="front"} end },
+		["unlockTrunc"]				= { method = "POST", url ="command/actuate_trunk", data = function(p) return {which_trunk="rear"} end },
+		["lockTrunc"]				= { method = "POST", url ="command/actuate_trunk", data = function(p) return {which_trunk="rear"} end },
+		["openChargePort"]		 	= { method = "POST", url ="command/charge_port_door_open" },
+		["closeChargePort"]		 	= { method = "POST", url ="command/charge_port_door_close" },
+		["setTemperature"] 			= { method = "POST", url ="command/set_temps", data = function(p) return {driver_temp=p,passenger_temp=p} end },
+		["setChargeLimit"] 			= { method = "POST", url ="command/set_charge_limit", data = function(p) return {percent=p} end },
+		["setMaximumChargeLimit"] 	= { method = "POST", url ="command/charge_max_range" },
+		["setStandardChargeLimit"]  = { method = "POST", url ="command/charge_standard" },
+		["ventSunroof"] 			= { method = "POST", url ="command/sun_roof_control", data = function(p) return {state="vent"} end },
+		["closeSunroof"] 			= { method = "POST", url ="command/sun_roof_control", data = function(p) return {state="close"} end },
+		["ventWindows"] 			= { method = "POST", url ="command/window_control", data = function(p) return {command="vent",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
+		["closeWindows"] 			= { method = "POST", url ="command/window_control", data = function(p) return {command="close",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
+		["updateSoftware"] 			= { method = "POST", url ="command/schedule_software_update", data = function(p) return {offset_sec=120} end }
 	}
-	
-	-- Tesla API location
-	local base_url = "https://owner-api.teslamotors.com"
+
+	-- Tesla API location details
+	local base_url = "https://owner-api.teslamotors.com/"
 	local vehicle_url = nil
+	local api_url = "api/1/vehicles"
+
 	-- Authentication data
 	local auth_data = {
-			["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
-			["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
-			["email"] = nil,
-			["password"] = nil,
-			["vin"] = nil,
-			["token"] = nil,
-			["refresh_token"] = nil,
-			["expires_in"] = nil,
-			["created_at"] = nil,
-			["expires_at"] = nil
-		}
+		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
+		["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
+		["email"] = nil,
+		["password"] = nil,
+		["vin"] = nil,
+		["token"] = nil,
+		["refresh_token"] = nil,
+		["expires_in"] = nil,
+		["created_at"] = nil,
+		["expires_at"] = nil
+	}
+
 	local request_header = {
 		["x-tesla-user-agent"] = "VeraTeslaCarApp/1.0",
 		["user-agent"] = "Mozilla/5.0 (Linux; Android 8.1.0; Pixel XL Build/OPM4.171019.021.D1; wv) Chrome/68.0.3440.91",
-		["accept"] = "application/json"
+		["accept"] = "application/json",
+		["content-type"] = "application/json; charset=UTF-8"
 	}
+
 	-- Vehicle details
-	local vehicle_data = nil
-	local last_wake_up_time = 0
-	local SendQueue = Queue.new()  -- Queue to hold commands to be handled.
-	
-	-- HTTPs request
-	local function HttpsRequest(mthd, strURL, ReqHdrs, PostData)
+	local last_wake_up_time = 0		-- Keep track of wake up so we can more efficiently query car.
+	local wake_up_retry = 0			-- When not zero it is a retry wake up attempt.
+	local command_retry = 0			-- When not zero it is a retry send attempt.
+	local SendQueue = Queue.new()	-- Queue to hold commands to be handled.
+	local callBacks = {}			-- To register command specific call back by client.
+
+	-- HTTPs request wrapper with Tesla API required attributes
+	local function _tesla_https_request(mthd, strURL, PostData)
 		local result = {}
 		local request_body = nil
---log.Debug("HttpsRequest 1 %s", strURL)		
+		local headers = request_header
+--log.Debug("HttpsRequest method %s, url %s", mthd, strURL)		
 		if PostData then
-			-- We pass JSONs in all cases
-			ReqHdrs["content-type"] = "application/json; charset=UTF-8"
 			request_body=json.encode(PostData)
-			ReqHdrs["content-length"] = string.len(request_body)
+			headers["content-length"] = string.len(request_body)
 --log.Debug("HttpsRequest 2 body: %s",request_body)		
 		else	
 --log.Debug("HttpsRequest 2, no body ")		
-			ReqHdrs["content-length"] = "0"
+			headers["content-length"] = "0"
 		end 
-		http.TIMEOUT = 60
+		http.TIMEOUT = TCS_HTTP_TIMEOUT
 		local bdy,cde,hdrs,stts = https.request{
 			url = strURL, 
 			method = mthd,
 			sink = ltn12.sink.table(result),
 			source = ltn12.source.string(request_body),
-			headers = ReqHdrs
+			headers = headers
 		}
---log.Debug("HttpsRequest 3 %s", cde)		
-		if cde ~= 200 then
-			return false, nil, cde
+--log.Debug("HttpsRequest 3 %s", cde)
+		if bdy == 1 then
+			if cde ~= 200 then
+				return false, cde, nil, stts
+			else
+--log.Debug("HttpsRequest result %s", table.concat(result))		
+				return true, cde, json.decode(table.concat(result)), "OK"
+			end
 		else
---log.Debug("HttpsRequest 4 %s", table.concat(result))		
-			return true, json.decode(table.concat(result)), cde
+			-- Bad request
+			return false, 400, nil, "HTTP/1.1 400 BAD REQUEST"
 		end
 	end	
 
 	-- ask for new token, if we have a refresh token, try refresh first.
 	local function _authenticate (force)
-		local msg = "OK"
-		local cmd = commands.authenticate
-		local data = {
-				client_id     = auth_data.client_id,
+		local cmd_data = {
+				client_id = auth_data.client_id,
 				client_secret = auth_data.client_secret
 			}
 		if force or (not auth_data.refresh_token) then
-			data.grant_type    	= "password"
-			data.email 			= auth_data.email
-			data.password 		= auth_data.password
+			cmd_data.grant_type = "password"
+			cmd_data.email = auth_data.email
+			cmd_data.password = auth_data.password
 		else
-			data.grant_type		= "refresh_token"
-			data.refresh_token	= auth_data.refresh_token
+			cmd_data.grant_type	= "refresh_token"
+			cmd_data.refresh_token = auth_data.refresh_token
 		end
-		local res, reply, cde = HttpsRequest(cmd.method, base_url .. cmd.url , request_header ,	data)
+		local res, cde, data, msg = _tesla_https_request("POST", base_url .. "oauth/token", cmd_data)
 		if res then
 			-- Succeed, set token details
-			auth_data.token 		= reply.access_token
-			auth_data.refresh_token	= reply.refresh_token
-			auth_data.token_type 	= reply.token_type
-			auth_data.expires_in	= reply.expires_in
-			auth_data.created_at	= reply.created_at		
-			auth_data.expires_at	= reply.created_at + reply.expires_in - 3600
-			request_header["authorization"] = reply.token_type.." "..reply.access_token
+			auth_data.token = data.access_token
+			auth_data.refresh_token = data.refresh_token
+			auth_data.token_type = data.token_type
+			auth_data.expires_in = data.expires_in
+			auth_data.created_at = data.created_at		
+			auth_data.expires_at = data.created_at + data.expires_in - 3600
+			request_header["authorization"] = data.token_type.." "..data.access_token
+			msg = "OK"
 		else
 			-- Fail, clear token data
-			auth_data.token 		= nil
-			auth_data.refresh_token	= nil
-			auth_data.expires_at 	= os.time() - 3600
-			msg = "request failed, HTTP code ".. cde
+			auth_data.token = nil
+			auth_data.refresh_token = nil
+			auth_data.expires_at = os.time() - 3600
 		end
-		return res, cde, msg
+		return res, cde, nil, msg
 	end
-
-	-- Get the right vehicle details to use in the API requests. If vin is set, find vehicle with that vin, else use first in list
-	-- Must be authenticated, there is no auto-authenticate.
-	local function _get_vehicle()
-		-- Check if we are authenticated
-		if auth_data.token then
-			local idx = 1
-			local cmd = commands.listCars
-			local vin = auth_data.vin
-			local res, reply, cde = HttpsRequest(cmd.method, base_url .. cmd.url , request_header )
-			if res then
-				if reply.count then
---log.Debug("GetVehicle got %d cars.", reply.count)				
-					if reply.count > 0 then
-						if reply.count > 1 then
-							-- See if we can find specific vin to support mutliple vehicles.
-							if vin and vin ~= "" then
-								for i = 1, reply.count do
-									if reply.response[i].vin == vin then
-										idx = i
-										break
-									end	
-								end
-							end
-						end	
---log.Debug("will use car #%d.",idx)						
-						vehicle_data = reply.response[idx]
-						-- Set the corect URL for vehicle requests
-						vehicle_url = base_url .. "/api/1/vehicles/" .. vehicle_data.id_s
---log.Debug("URL to use %s",vehicle_url)						
-						return true, vehicle_data, "OK"
-					else
-						return false, 404, "No vehicles found."
-					end
+	
+	-- Send a command to the API.
+	local function _send_command(command, param)	
+		local cmd = commands[command]
+		if cmd then 
+			-- See if we are logged in and/or need to refresh the token
+			if (not auth_data.token) or (not auth_data.expires_at) or (auth_data.expires_at < os.time()) then
+				log.Debug("SendCommand, need to (re)authenticate.")
+				local res, cde, data, msg = _authenticate()
+				if not res then
+					return false, cde, nil, "Unable to authenticate"
+				end	
+			end
+			log.Debug("SendCommand, sending command %s.", command)
+			-- Build correct URL to use
+			local url = nil
+			if cmd.url then
+				if vehicle_url then
+					url = vehicle_url..cmd.url
 				else
-					return false, 428, "Vehicle in deep sleep."
+					return false, 412, nil, "No vehicle select. Call GetVehicle first."
 				end
 			else
-				return false, cde, "HTTP Request failed, code ".. cde
+				-- Only used for listCars command.
+				url = base_url..api_url
+			end
+			local cmd_data = nil
+			if cmd.data then cmd_data = cmd.data(param) end
+			return _tesla_https_request(cmd.method, url, cmd_data)
+		else
+			log.Error("SendCommand, got unimplemented command %s.", command)
+			return false, 501, nil, "Unimplemented command : "..(command or "?")
+		end
+	end
+	
+	-- Get the right vehicle details to use in the API requests. If vin is set, find vehicle with that vin, else use first in list
+	-- In rare cases I noticed this command returned a 404 or empty list while there are car on the account. Not handling that exception for now.
+	-- We rebuild vehicle_url each call are there are reports it can change over time.
+	local function _get_vehicle()
+		local vin = auth_data.vin
+		local res, cde, data, msg = _send_command("listCars")
+		if res then
+			if data.count then
+--log.Debug("GetVehicle got %d cars.", data.count)				
+				if data.count > 0 then
+					local idx = 1
+					if data.count > 1 then
+						-- See if we can find specific vin to support multiple vehicles.
+						if vin and vin ~= "" then
+							for i = 1, data.count do
+								if data.response[i].vin == vin then
+									idx = i
+									break
+								end	
+							end
+						end
+					end
+					local resp = data.response[idx]
+--log.Debug("will use car #%d.",idx)						
+					-- Set the corect URL for vehicle requests
+					vehicle_url = base_url .. api_url .. "/" .. resp.id_s .. "/"
+--log.Debug("Car URL to use %s.",vehicle_url)						
+					return true, cde, resp, msg
+				else
+					return false, 404, nil, "No vehicles found."
+				end
+			else
+				return false, 428, nil, "Vehicle in deep sleep."
 			end
 		else
-			return false, 401, "Not authenticated."
+			return false, cde, nil, msg
 		end
 	end
 
@@ -733,17 +809,16 @@ local function TeslaCarAPI()
 	local function _get_vehicle_awake_status()
 		-- Only poll car if last confirmed awake is more than 50 seconds ago.
 		if (os.difftime(os.time(), last_wake_up_time) > 50) then
-			local res, data, msg = _get_vehicle()
+			local awake = false
+			local res, cde, data, msg = _get_vehicle()
 			if res then
 				-- Return true if online.
-				local awake =  data.state=="online"
+				awake = data.state=="online"
 				if awake then last_wake_up_time = os.time()	end
-				return true, awake, "OK"
-			else
-				return res, data, msg
 			end
+			return res, cde, awake, msg
 		else	
-			return true, true, "OK"
+			return true, 200, true, "OK"
 		end
 	end
 
@@ -751,155 +826,26 @@ local function TeslaCarAPI()
 	local function _get_vehicle_vins()
 		-- Check if we are authenticated
 		if auth_data.token then
-			local cmd = commands.listCars
 			local vins = {}
-			local res, reply, cde = HttpsRequest(cmd.method, base_url .. cmd.url , request_header )
+			local res, cde, data, msg = _send_command("listCars")
 			if res then
-				if reply.count then
-					if reply.count > 0 then
-						for i = 1, reply.count do
-							table.insert(reply.response[i].vin)
+				if data.count then
+					if data.count > 0 then
+						for i = 1, data.count do
+							table.insert(data.response[i].vin)
 						end
-						return true, vins, "OK"
+						return true, cde, vins, msg
 					else
-						return false, 404, "No vehicles found."
+						return false, 404, nil, "No vehicles found."
 					end
 				else
-					return false, 428, "Vehicle in deep sleep."
+					return false, 428, nil, "Vehicle in deep sleep."
 				end
 			else
-				return false, cde, "HTTP Request failed, code ".. cde
+				return false, cde, nil, msg
 			end
 		else
-			return false, 401, "Not authenticated."
-		end
-	end
-
-	-- Send a command to the API.
-	local function _send_command(command, param)
-		if vehicle_data then
-			log.Debug("SendCommand, sending %s", command)
-			local cmd = commands[command]
-			if cmd then 
-				-- Set correct command URL with optional parameter
-				local url = cmd.url
-				local data = nil
-				if cmd.data then data = cmd.data(param) end
-				local res, reply, cde = HttpsRequest(cmd.method, vehicle_url..url, request_header, data)
-				if res then
-					return true, reply, "OK"
-				else
-					return false, cde, "HTTP Request failed, code ".. cde
-				end	
-			else
-				return false, 501, "Unknown command : "..command
-			end
-		else
-			return false, 404, "No vehicle selected."
-		end
-	end
-	
-	-- Send a command to the API. To be used as primary method to send commands to the car.
-	-- If car is not awake, wake it up first. Commands can be queued if needed.
-	-- Also handles situation when no vehicles are reported on the account by retrying several times.
-	-- For each command the callback cbs function is called to process the results. cbf is called for failures.
-	local function _send_command_async(cmd, param, cbs, cbf, retry)
-		local retry = retry or 0
-		if (cmd == nil) then
-			log.Debug("SendCommandAsync, no cmd specified. Queue length %d.", Queue.len(SendQueue))
-			-- Triggered to empty q
-			if (Queue.len(SendQueue) > 0) then
-				local pop_t = Queue.pop(SendQueue)
-				local res, reply, msg = _send_command(pop_t.cmd, pop_t.param)
-				if res then
-					pop_t.cbs(pop_t, reply, msg)
-				else
-					pop_t.cbf(pop_t, reply, msg)
-				end
-				-- If we have more on Q, send those with 5 sec interval not to hog resources.
-				if (Queue.len(SendQueue) > 0) then
-					log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
-					luup.call_delay("TSC_send_queued", 5)
-					return true, 200, "More commands queued to send."
-				else	
-					return true, 200, "All commands sent."
-				end	
-			else	
-				return true, 200, "All commands sent."
-			end
-		else
-			log.Debug("SendCommandAsync, command %s. Queue length %d.", cmd, Queue.len(SendQueue))
-			if (Queue.len(SendQueue) > 0) then
-				-- We are working on a command, add this to queue
-				log.Debug("SendCommandAsync, command %s pushed on queue.", cmd)
-				Queue.push(SendQueue, {cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry})
-				return true, 200, "Command pushed on queue."
-			else
-				log.Debug("SendCommandAsync, queue empty command %s to be send.", cmd)
-				-- Q empty try sending right away
-				-- See if we are logged in and or need to refresh the token
-				if (not auth_data.expires_at) or auth_data.expires_at < os.time() then
-					log.Debug("SendCommandAsync, need to authenticate.")
-					local res, reply, msg = _authenticate()
-					if not res then
-						cbf({cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry}, reply, msg)
-						return false, 401, "Unable to authenticate"
-					end	
-				end
-				-- See if car is available. Sometimes the API responds no vehicles, esp with SW update installing.
-				-- If not push command and try again a tad later.
-				local res, reply, msg = _get_vehicle_awake_status()
-				if res and reply then
-					log.Debug("SendCommandAsync, car is awake. Sending command %s", cmd)
-					-- Its ready for the command, send it
-					local res, reply, msg = _send_command(cmd, param)
-					if res then
-						cbs({cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry}, reply, msg)
-					else
-						cbf({cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry}, reply, msg)
-					end
-					-- If we have more on Q by now, send those with 2 sec interval not to hog Vera resources.
-					if (Queue.len(SendQueue) > 0) then
-						log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
-						luup.call_delay("TSC_send_queued", 2)
-						return true, 200, "More commands queued to send."
-					else	
-						return true, 200, "All commands sent."
-					end	
-				elseif res and not reply then
-					-- It is not awake, wake it up, then send command. Push it on the queue.
-					log.Debug("SendCommandAsync, car is asleep. Wake it up and queue command %s", cmd)
-					Queue.push(SendQueue, {cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry})
-					_send_command("wakeUp")
-					luup.call_delay("TSC_await_wakeup_vehicle", 5, "15")
-					return true, 200, "Waiting to wake up vehicle."
-				elseif not res and reply == 404 then
-					-- We got a response that there are no vehicles on the account. Retry after 10 secs, 20 times max.
-					log.Debug("SendCommandAsync, got a no vehicles on account. Wait and queue command", cmd)
-					Queue.push(SendQueue, {cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry})
-					luup.call_delay("TSC_recheck_vehicle", 10, "20")
-					return true, 200, "Waiting to re-find vehicle on account."
-				else
-					-- We have some failure
-					cbf({cmd = cmd, cbs = cbs, cbf = cbf, param = param, retry = retry}, reply, msg)
-					log.Debug("SendCommandAsync, failure for command %s", cmd)
-					return false, reply, msg
-				end	
-			end
-		end
-	end
-
-	-- Get all the data for car if awake
-	local function _get_vehicle_data()
-		-- Check for awake status
-		local res, reply, msg = _get_vehicle_awake_status()
-		if res and reply then
-			local res, reply, msg = _send_command("getVehicleDetails")
-			return res, reply, msg
-		elseif res and not reply then
-			return false, false, "Car is not online."
-		else	
-			return false, reply, msg
+			return false, 401, nil, "Not authenticated."
 		end
 	end
 	
@@ -907,102 +853,172 @@ local function TeslaCarAPI()
 	local function _logoff()
 		-- Check if we are authenticated
 		if auth_data.token then
-			local msg = "OK"
-			local cmd = commands.logoff
-			local res, reply, cde = HttpsRequest(cmd.method, base_url .. cmd.url , request_header ,	
-			{
-				token = auth_data.token
-			} )
+			local res, cde, data, msg = _tesla_https_request("POST", base_url .. "oauth/revoke", { token = auth_data.token })
 			if res then
 				auth_data.expires_at = nil
 				auth_data.token = nil
-			else
-				msg = "request failed, HTTP code ".. cde
 			end
-			return res, cde, msg
+			return res, cde, nil, msg
 		else
-			return false, 401, "Not authenticated."
+			return false, 401, nil, "Not authenticated."
 		end
+	end
+
+	-- Call back for send commands async
+	-- Caller can add callbacks for commands that will be called on success and failure, but not on retry.
+	local function _send_callback(cmd, res, cde, data, msg)
+		-- Handle wake up see if car did wake up or not.
+		local command = cmd.cmd
+		local func = callBacks[command] or callBacks["other"]
+		if func then
+			-- Call the registered handler
+			local stat, res = pcall(func, cmd, res, cde, data, msg)
+			if not stat then
+				log.Error("Error in call back for command %s, msg %s", command, res)
+			end
+		else
+			-- No call back
+			log.Debug("No call back for command %s.", command)
+		end	
+	end
+
+	-- Put a new command on the send queue and initiate send process.
+	-- Call results are handled async.
+	local function _send_command_async(command, param)
+		local qlen = Queue.len(SendQueue)
+		log.Debug("SendCommand, command %s pushed on send queue. Queue depth %d", command, qlen)
+		Queue.push(SendQueue, {cmd = command, param = param})
+		if wake_up_retry == 0 then
+			if qlen == 0 then
+				-- First command put on send queue, initiate send process. 
+				-- See if car is awake
+				local res, cde, awake, msg = _get_vehicle_awake_status()
+				if awake then
+					-- It's awake, send the command(s) from the queue
+					log.Debug("Car is awake. Send command in %d sec.", TCS_SEND_INTERVAL)
+					command_retry = 0
+					luup.call_delay("TSC_send_queued", TCS_SEND_INTERVAL)
+				else
+					-- Send wake up command and wait for car to wake up.
+					_send_command("wakeUp")
+					wake_up_retry = 1
+					luup.call_delay("TSC_wakeup_vehicle", TCS_WAKEUP_CHECK_INTERVAL)
+				end
+			else
+				-- Commands on queue. Let that run its course.
+				log.Debug("Already processing queued commands")
+			end
+		else
+			-- We are trying to wake up car. Let that run its course.
+			log.Debug("Already trying to wake up car. Retry count %d.", wake_up_retry)
+		end	
+		return true, 200, nil, "OK"
 	end
 
 	-- Wait until vehicle is awake, then re-send the queued command
 	-- If wake up fails we empty the whole queue, to avoid dead lock. It is up to calling app to start over at later point.
-	local function TSC_await_wakeup_vehicle(param)
-		log.Debug("TSC_await_wakeup_vehicle enter",param)	
-		local cnt = tonumber(param) - 1
-		if cnt > 0 then
-			-- See if awake by now.
-			local res, reply, msg = _get_vehicle_awake_status()
-			if res and reply then
-				-- It's awake, send the command(s) from the queue
-				log.Debug("Wake up loop #%d woke up car. Send command(s).", cnt)
-				luup.call_delay("TSC_send_queued", 2)
-			elseif res then
-				-- Not awake yet retry in three seconds.
-				log.Debug("Loop #%d to wake up car.", cnt)
-				luup.call_delay("TSC_await_wakeup_vehicle", 3, tostring(cnt))
-				if (cnt % 5) == 1 then
-					-- resend wake_up command if still asleep after 15 seconds
-					local res, reply, msg = _send_command("wakeUp")
-					if res then
-						log.Debug("Loop #%d to wake up car resend wake_up.", cnt)
-					else
-						-- Wake up failing signal then empty queue
-						local pop_t = Queue.pop(SendQueue)
-						pop_t.cbf(pop_t, reply, msg)
-						Queue.drop(SendQueue)
-						log.Error("Failure to wake up car. #%s, %s", reply, msg)
-					end
-				end	
+	local function TSC_wakeup_vehicle()
+		log.Debug("TSC_wakeup_vehicle: Retry count %d. ", wake_up_retry)
+		local awake = false
+		-- See if awake by now.
+		local res, cde, data, msg = _send_command("wakeUp")
+		if res then
+			local resp = data.response
+			if resp then
+				awake = resp.state=="online"
 			else
-				-- Failure
-				local pop_t = Queue.pop(SendQueue)
-				pop_t.cbf(pop_t, reply, msg)
-				Queue.drop(SendQueue)
-				log.Error("Failure to wake up car. #%s, %s", reply, msg)
+				log.Debug("Wake up send failed. No response data. Message %s", msg)
 			end
 		else
-			-- Wake up failed. Empty command queue.
-			local pop_t = Queue.pop(SendQueue)
-			pop_t.cbf(pop_t, 522, "Unable to wake up car in set time.")
-			Queue.drop(SendQueue)
-			log.Error("Unable to wake up car in set time.")
+			-- Send failed.
+			log.Debug("Wake up send failed. Error #%d, %s", cde, msg)
+		end
+		if awake then
+			-- It's awake, start sending the command(s) from the queue
+			log.Debug("Wake up loop %d woke up car. Start sending queued command(s).", wake_up_retry)
+			luup.call_delay("TSC_send_queued", TCS_SEND_INTERVAL)
+			wake_up_retry = 0
+		else
+			wake_up_retry = wake_up_retry + 1
+			if wake_up_retry < TCS_MAX_WAKEUP_RETRIES then
+				luup.call_delay("TSC_wakeup_vehicle", TCS_WAKEUP_CHECK_INTERVAL)
+			else
+				-- Wake up failed. Empty command queue.
+				Queue.drop(SendQueue)
+				log.Error("Unable to wake up car in set time.")
+				_send_callback({cmd = "wakeUp", param = nil}, false, 408, nil, "Unable to wakeup car.")
+				wake_up_retry = 0
+			end	
 		end
 	end
 	
-	-- We got that no vehicles where on the account. Recheck, then wake up.
-	local function TSC_recheck_vehicle(param)
-		local cnt = tonumber(param) - 1
-		if cnt > 0 then
-			-- See if there is a car by now.
-			local res, reply, msg = _get_vehicle_awake_status()
-			if res and reply then
-				-- Car found and awake
-				log.Debug("Recheck loop #%d found car awake. Send command(s).", cnt)
-				luup.call_delay("TSC_send_queued", 2)
-			elseif res and not reply then
-				-- Found, but awake yet. Try to wake up.
-				log.Debug("Loop #%d found car, but need to wake up car.", cnt)
-				_send_command("wakeUp")
-				luup.call_delay("TSC_await_wakeup_vehicle", 5, "10")
-			elseif not res and reply == 404 then
-				-- Still no car reported, try again
-				log.Debug("Loop #%d to find car on account.", tostring(cnt))
-				luup.call_delay("TSC_recheck_vehicle", 10, cnt)
-			else	
-				log.Error("Failure to find car. #%s, %s", reply, msg)
+	-- Send a queued command. We must make sure car is awake before doing this.
+	-- On specific conditions we know the command needs to be resend, so do this.
+	local function TSC_send_queued()
+		if (Queue.len(SendQueue) > 0) then
+			local need_retry = false
+			local interval = TCS_SEND_INTERVAL
+			log.Debug("TSC_send_queued: Sending command from Queue. Send queue length %d.", Queue.len(SendQueue))
+			-- Look at command on top of the queue
+			local pop_t = Queue.peak(SendQueue)
+			local res, cde, data, msg = _send_command(pop_t.cmd, pop_t.param)
+			if cde == 408 or cde == 502 or cde == 504 then
+				-- HTTP Error code indicates need to resend command
+				need_retry = true
+			else
+				-- Older Model S can be slow to wake up.
+				if cde == 200 then
+					if data.response then
+						if data.response.reason == "could_not_wake_buses" then
+							need_retry = true
+						end
+					end
+				end
 			end
-		else
-			log.Error("Unable to wake up car in set time.")
+			-- If retry is needed, resend command
+			if need_retry then
+				if command_retry < TCS_MAX_RETRIES then
+					command_retry = command_retry + 1
+					interval = TCS_RETRY_DELAY
+					log.Warning("TSC_send_queued: Doing retry #%d, command %s, cde #%d, msg: %s", command_retry, pop_t.cmd, cde, msg)
+				else
+					-- Max retries exeeded. Drop command.
+					log.Error("TSC_send_queued:Call back command %s failed after max retries #%d, msg: %s", pop_t.cmd, command_retry, msg)
+					Queue.pop(SendQueue)
+					command_retry = 0
+					_send_callback(pop_t, false, 400, nil, "Failed to send command: "..pop_t.cmd)
+				end
+			else
+				-- No need to retry, send results to call back handler and remove command from queue.
+				_send_callback(pop_t, res, cde, data, msg)
+				Queue.pop(SendQueue)
+			end	
+			-- If we have more on Q, send next with an interval.
+			-- If call back did not remove the command from the queu, it will be resend.
+			if (Queue.len(SendQueue) > 0) then
+				log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
+				command_retry = 0
+				luup.call_delay("TSC_send_queued", interval)
+				return true, 200, nil, "More commands queued. Send next in " .. interval
+			else	
+				log.Debug("TSC_send_queued: No more commands on Queue.")
+				return true, 200, nil, "No more commands to send."
+			end	
+		else	
+			log.Debug("TSC_send_queued: Queue is empty.")
+			return true, 200, nil, "All commands sent."
 		end
+	end
+	
+		-- Add a callback for a given command on top of internal handing
+	local _register_callback = function(cmdtype, cbFunction)
+		if (type(cbFunction) == 'function') then
+			callBacks[cmdtype] = cbFunction 
+			return true, 200, nil, "OK"
+		end
+		return nil, 501, nil, "Not a function"
 	end
 
-	-- Send a queued command
-	local function TSC_send_queued()
-		log.Debug("Sending command #%d from Queue.", Queue.len(SendQueue))
-		_send_command_async(nil)
-	end
-	
 	-- Initialize API functions 
 	local function _init(email, password, vin)
 		auth_data.email = email
@@ -1010,8 +1026,7 @@ local function TeslaCarAPI()
 		auth_data.vin = vin
 		-- Need to make these global for luup.call_delay use. 
 		_G.TSC_send_queued = TSC_send_queued
-		_G.TSC_recheck_vehicle = TSC_recheck_vehicle
-		_G.TSC_await_wakeup_vehicle = TSC_await_wakeup_vehicle
+		_G.TSC_wakeup_vehicle = TSC_wakeup_vehicle
 	end
 
 	return {
@@ -1021,9 +1036,8 @@ local function TeslaCarAPI()
 		GetVehicleVins = _get_vehicle_vins,
 		GetVehicle = _get_vehicle,
 		GetVehicleAwakeStatus = _get_vehicle_awake_status,
-		GetVehicleData = _get_vehicle_data,
-		SendCommand = _send_command,
-		SendCommandAsync = _send_command_async
+		RegisterCallBack = _register_callback,
+		SendCommand = _send_command_async
 	}
 end
 
@@ -1054,7 +1068,7 @@ function TeslaCarModule()
 				-- If no message, display range
 				if msg == "" then
 					local units = (var.Get("GuiDistanceUnits") == "km/hr" and "km" or "mi")
-					msg = string.format("Range: %s%s", var.Get("BatteryRange"), units)
+					msg = string.format("Range: %s %s", var.Get("BatteryRange"), units)
 				end
 			end
 		end
@@ -1102,7 +1116,7 @@ function TeslaCarModule()
 		readyToPoll = false
 		TeslaCar.Logoff()
 		_set_status_message()
-		return 200, "OK"
+		return true, 200, nil, "OK"
 	end
 	
 	local function _login()
@@ -1113,38 +1127,38 @@ function TeslaCarModule()
 		local vin = var.Get("VIN")
 		if email ~= "" and password ~= "" then
 			TeslaCar.Initialize(email, password, vin)
-			local res, reply, msg = TeslaCar.Authenticate(true)
+			local res, cde, data, msg = TeslaCar.Authenticate(true)
 			if res then
 				var.Set("LastLogin", os.time())
-				res, reply, msg = TeslaCar.GetVehicle()
+				res, cde, data, msg = TeslaCar.GetVehicle()
 				if res then
 					readyToPoll = true
-					var.Set("IconSet", ICONS.IDLE)
-					return 200, msg
+					if var.GetNumber("CarIsAwake") == 0 then
+						var.Set("IconSet", ICONS.ASLEEP)
+					else
+						var.Set("IconSet", ICONS.IDLE)
+					end
+					return true, 200, data, msg
 				else	
-					log.Error("Unable to select vehicle. errorCode : %s, errorMessage : %s", reply, msg)
-					return reply, msg
+					log.Error("Unable to select vehicle. errorCode : %d, errorMessage : %s", cde, msg)
+					return false, cde, nil, msg
 				end
 			else
-				log.Error("Unable to login. errorCode : %s, errorMessage : %s", reply, msg)
-				return reply, "Login to TeslaCar Portal failed "..msg
+				log.Error("Unable to login. errorCode : %d, errorMessage : %s", cde, msg)
+				return false, cde, nil, "Login to TeslaCar Portal failed "..msg
 			end
 		else
 			log.Warning("Configuration not complete, missing email and/or password")
-			return 404, "Plug-in setup not complete", "Missing email and/or password, please complete setup."
+			return false, 404, nil, "Plug-in setup not complete", "Missing email and/or password, please complete setup."
 		end
 	end
 	
 	local function _command(command)
 		log.Debug("Sending command : %s", command)
-		local res, cde, msg = TeslaCar.SendCommand(command, param)
-		if res then
-			log.Log("Command result : Code ; %s, Response ; %s",cde, string.sub(res,1,30))
-			log.Debug(res)	
-			return cde, res
-		else
-			return cde, res
-		end
+		local res, cde, data, msg = TeslaCar.SendCommand(command, param)
+		log.Log("Command result : Code ; %d, Response ; %s", cde, string.sub(msg,1,30))
+		log.Debug(msg)	
+		return res, cde, data, msg
 	end
 	
 	-- Calculate distance between two lat/long coordinates
@@ -1225,8 +1239,8 @@ function TeslaCarModule()
 		end
 		-- Set user messages and icons based on actual values
 		if var.GetNumber("ClimateStatus") == 1 then
-			var.Set("ClimateMessage", "Climatizing on")
-			var.Set("DisplayLine2", "Climatizing on.", SIDS.ALTUI)
+			var.Set("ClimateMessage", "Climatizing On")
+			var.Set("DisplayLine2", "Climatizing On.", SIDS.ALTUI)
 			icon = ICONS.CLIMATE
 		else
 			local inst = var.Get("InsideTemp")
@@ -1275,7 +1289,7 @@ function TeslaCarModule()
 			var.Set("DisplayLine2", "Car is moving.", SIDS.ALTUI)
 			icon = ICONS.MOVING
 		else	
-			var.Set("LockedMessage", "Locked")
+			-- var.Set("LockedMessage", "Locked")
 		end
 		local swStat = var.GetNumber("SoftwareStatus")
 		if swStat == 0 then
@@ -1303,7 +1317,10 @@ function TeslaCarModule()
 			var.Set("GuiTempUnits", settings.gui_temperature_units or "C")
 			var.Set("GuiRangeDisplay", settings.gui_range_display or "")
 			var.Set("GuiSettingsTS", settings.timestamp or os.time())
-
+			return true
+		else
+			log.Warning("Update: No vehicle settings found")
+			return false, 404, nil, "No vehicle settings found"
 		end
 	end
 
@@ -1315,6 +1332,10 @@ function TeslaCarModule()
 			var.Set("CarHasSunRoof", config.sun_roof_installed or 0)
 			var.Set("CarHasMotorizedChargePort", _bool_to_zero_one(config.motorized_charge_port))
 			var.Set("CarCanAccutateTrunks", _bool_to_zero_one(config.motorized_charge_port))
+			return true
+		else
+			log.Warning("Update: No vehicle configuration found")
+			return false, 404, nil, "No vehicle configuration found"
 		end
 	end
 
@@ -1343,6 +1364,10 @@ function TeslaCarModule()
 			var.Set("DrivePower", state.power or 0)
 			var.Set("DriveShiftState", state.shift_state or 0)
 			var.Set("DriveStateTS", state.timestamp or os.time())
+			return true
+		else
+			log.Warning("Update: No vehicle driving state found")
+			return false, 404, nil, "No vehicle driving state found"
 		end
 	end
 
@@ -1366,6 +1391,10 @@ function TeslaCarModule()
 			var.Set("WiperBladesHeaterStatus", _bool_to_zero_one(state.wiper_blade_heater))
 			var.Set("SmartPreconditioning", _bool_to_zero_one(state.smart_preconditioning))
 			var.Set("ClimateStateTS", state.timestamp or os.time())
+			return true
+		else
+			log.Warning("Update: No vehicle climate state found")
+			return false, 404, nil, "No vehicle climate state found"
 		end
 	end
 
@@ -1419,6 +1448,10 @@ function TeslaCarModule()
 			var.Set("ChargePower", state.charger_power or 0)
 			var.Set("ChargeLimitSOC", state.charge_limit_soc or 90)
 			var.Set("ChargeStateTS", state.timestamp or 0)
+			return true
+		else
+			log.Warning("Update: No vehicle charge state found")
+			return false, 404, nil, "No vehicle charge state found"
 		end
 	end
 
@@ -1467,137 +1500,127 @@ function TeslaCarModule()
 				end
 				var.Set("SoftwareStatus", swStat)
 			end
+			return true
+		else
+			log.Warning("Update: No vehicle state found")
+			return false, 404, nil, "No vehicle state found"
 		end
 	end
 
-	-- Call backs for car request commands.
-	local function CM_CBS_Error(cmd,data,msg)
-		-- cmd = {cmd, cbs , cbf, param, retry}
-		log.Error("Call back fail called: %s",msg)
-		if data == 522 then
-			-- Could not wake up car
-			log.Error("Call back fail to wake up car: %s",msg)
-			_set_status_message("Failed to wake up car for command: "..cmd.cmd)
-		elseif data == 408 or data == 502 or data == 504 then
-			-- codes 502, 504 and 408 call for a retry
-			if cmd.retry < 4 then
-				log.Warning("Call back fail. Doing retry #%d, command %s, msg: %s", cmd.retry, cmd.cmd, msg)
-				TeslaCar.SendCommandAsync(cmd.cmd, cmd.param, cmd.cbs, cmd.cbf, cmd.retry+1)
+	-- Call backs for car request commands. Must be registered as handlers.
+	local function CB_getVehicleDetails(cmd, res, cde, data, msg)
+		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
+		if cde == 200 then
+			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
+			if data.response then
+				local resp = data.response
+				if resp.id_s then
+					-- successful reply on command
+					-- update with latest vehicle
+					local icon = ICONS.IDLE
+					-- Process overall response values
+					var.Set("CarName", resp.display_name)
+					var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
+					var.Set("VIN", resp.vin)
+					-- Process specific category states
+					_update_gui_settings(resp.gui_settings)
+					_update_vehicle_state(resp.vehicle_state)
+					_update_drive_state(resp.drive_state)
+					_update_climate_state(resp.climate_state)
+					_update_charge_state(resp.charge_state)
+					-- Update GUI messages and child devices
+					_update_message_texts()
+					_update_child_devices()
+					_set_status_message()
+				else
+					-- Some error in request, look at reason
+					local res = resp.reason or "unknown"
+					log.Error("Get vehicle details missing data. Reason %s.", res)
+					_set_status_message("Get vehicle details missing data. Reason "..res)
+				end
 			else
-				log.Error("Call back failed of command %s after max retries #%d, msg: %s", cmd.cmd, cmd.retry, msg)
-				_set_status_message("Failed to send command: "..cmd.cmd)
+				log.Error("Get vehicle details error. Empty response.")
 			end
-		else	
-			_set_status_message()
+		else
+			log.Error("Get vehicle details error. Reason #%d, %s.", cde, msg)
+			_set_status_message("Get vehicle details error. Reason  "..msg)
 		end
 	end
 	
-	-- Standard call back for commands that do not require special handling
-	local function CM_CBS_Success(cmd,data,msg)
-		-- cmd = {cmd, cbs , cbf, param, retry}
-		if type(data) ~= "string" then
-			if data.response.result then
-				var.Set("CarIsAwake", 1)  -- Car must be awake by now.
-				log.Debug("Call back for success command %s, message : %s", cmd.cmd, msg)
-			else
-				log.Debug("Call back for success command %s, error message : %s", cmd.cmd, data.response.reason)
-			end
-			-- Update car status in 15 seconds so car can process command. Get scheduled time, so we can optimize.
-			last_scheduled_poll = os.time() + 15
-			log.Debug("Scheduling poll at %s", os.date("%X", last_scheduled_poll))
-			luup.call_delay("_poll", 15)
-		else
-			log.Debug("Call back success message : %s",msg)
-			log.Debug("Call back data: %s",data)
-		end
-		_set_status_message()
-	end
-
-	-- Callback for GetVehicleDetails
-	local function CM_CBS_getVehicleDetails(cmd,data,msg)
-		-- cmd = {cmd, cbs , cbf, param, retry}
-		if data.response then
-			local icon = ICONS.IDLE
+	local function CB_getServiceData(cmd, res, cde, data, msg)
+		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
+		if cde == 200 then
 			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
-			local resp = data.response
---			var.Set("VehicleData", json.encode(resp))
-			-- Process overall response values
-			var.Set("CarName", resp.display_name)
-			var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
-			var.Set("VIN", resp.vin)
-			-- Process specific category states
-			_update_gui_settings(resp.gui_settings)
-			_update_vehicle_state(resp.vehicle_state)
-			_update_drive_state(resp.drive_state)
-			_update_climate_state(resp.climate_state)
-			_update_charge_state(resp.charge_state)
-			-- Update GUI messages and child devices
-			_update_message_texts()
-			_update_child_devices()
+			local service_status = 0
+			local service_etc = ""
+			if data.response then
+				local resp = data.response
+				if resp.service_status then
+					service_status = (resp.service_status == "in_service" and 1) or 0
+					service_etc = resp.service_etc
+				else
+					-- Is normal response if not in service.
+				end
+			else
+				log.Error("Get service data error. No response.")
+			end
+			var.Set("InServiceStatus", service_status)
+			var.Set("InServiceEtc", service_etc)
 		else
-			-- No response data, some error I presume
-			log.Error("Get TeslaCar.GetVehicleData, no response data error : %s", msg)
+			log.Error("Get service data error. Reason #%d, %s.", cde, msg)
+			_set_status_message("Get service data error. Reason  "..msg)
 		end
-		_set_status_message()
-		data = nil
 	end
 
-	-- Callback for GetServiceData
-	local function CM_CBS_getServiceData(cmd,data,msg)
-		-- cmd = {cmd, cbs , cbf, param, retry}
-		if data.response then
-			local resp = data.response
-			-- Process overall response values
-			if resp.service_status then
-				var.Set("InServiceStatus", resp.service_status == "in_service" and 1 or 0)
-				var.Set("InServiceEtc", resp.service_etc)
-			else
-				var.Set("InServiceStatus", 0)
-				var.Set("InServiceEtc", "")
-			end
+	local function CB_wakeUp(cmd, res, cde, data, msg)
+		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
+		if cde == 200 then
+			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
 		else
-			-- No response data, some error I presume
-			log.Error("Get TeslaCar.GetServiceData, no response data error : %s", msg)
+			log.Error("Wake up error. Reason #%d, %s.", cde, msg)
+			_set_status_message("Wake up error. Reason  "..msg)
 		end
-		data = nil
+	end
+	
+	-- Call back if no command specific is registered.
+	local function CB_other(cmd, res, cde, data, msg)
+		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
+		if cde == 200 then
+			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
+			-- Schedule poll to update car status details change because of command.
+			local delay = TCS_POLL_SUCCESS_DELAY
+			-- For sent temp setpoint we take longer delay and typically user sends multiple. Should give better GUI response.
+			if cmd.cmd == "setTemperature" then delay = delay * 2 end
+			last_scheduled_poll = os.time() + delay
+			log.Debug("Scheduling poll at %s", os.date("%X", last_scheduled_poll))
+			luup.call_delay("_poll", delay)
+		else
+			log.Error("Command send error. Reason #%d, %s.", cde, msg)
+			_set_status_message("Command send error. Reason  "..msg)
+		end
 	end
 
 	-- Request the latest status from the car
 	local function _update_car_status(force)
-		
 		if not force then
 			-- Only poll if car is awake
 			if var.GetNumber("CarIsAwake") == 0 then
-				var.Set("IconSet",ICONS.ASLEEP)
+				var.Set("IconSet", ICONS.ASLEEP)
 				log.Debug("CarModule.UpdateCarStatus, skipping, Tesla is asleep.")
-				return false, "Car is asleep"
+				return false, 307, nil, "Car is asleep"
 			end
 		end
 
 		_set_status_message("Updating car status...")
-		local res, data, msg = TeslaCar.SendCommandAsync("getVehicleDetails",nil,CM_CBS_getVehicleDetails,CM_CBS_Error)
-		if res then
-			log.Debug("TeslaCar.GetVehicleData Async result : %s, %s", data, msg)
-			local res, data, msg = TeslaCar.SendCommandAsync("getServiceData",nil,CM_CBS_getServiceData,CM_CBS_Error)
-		else
-			log.Error("TeslaCar.GetVehicleData Async failed : %s, %s", data, msg)
-			_set_status_message()
-		end
-		return res, msg
+		TeslaCar.SendCommand("getVehicleDetails")
+		return TeslaCar.SendCommand("getServiceData")
 	end	
 
 	-- Send the requested command
 	local function _start_action(request, param)
 		log.Debug("Start Action enter for command %s, %s.", request, (param or ""))
 		_set_status_message("Sending command "..request)
-		local res, data, msg = TeslaCar.SendCommandAsync(request,param,CM_CBS_Success,CM_CBS_Error)
-		if res then
-			log.Debug("Start Action Async result : %s, %s", data, msg)
-		else
-			log.Error("Start Action Async failed : %s, %s", data, msg)
-			_set_status_message()
-		end
-
+		return TeslaCar.SendCommand(request, param)
 	end	
 	
 	-- Trigger a forced update of the car status. Will wake up car.
@@ -1665,9 +1688,9 @@ function TeslaCarModule()
 			local lckStat = var.GetNumber("LockedStatus")
 			local clmStat = var.GetNumber("ClimateStatus")
 			local mvStat = var.GetNumber("MovingStatus")
-			local res, cde, msg = TeslaCar.GetVehicleAwakeStatus()
+			local res, cde, data, msg = TeslaCar.GetVehicleAwakeStatus()
 			if res then
-				if cde then
+				if data then
 					awake = 1
 					if prevAwake == 0 then
 						last_woke_up_time = os.time()
@@ -1682,7 +1705,7 @@ function TeslaCarModule()
 				var.Set("CarIsAwake", awake)
 			else	
 				last_woke_up_time = 0
-				log.Debug("Monitor awake state, failed %s %s", cde, msg)
+				log.Error("Monitor awake state, failed #%d %s", cde, msg)
 			end
 			-- PollSettings [2] = Poll interval if car is awake
 			-- PollSettings [3] = Poll interval if charging and remaining charge time > 1 hour
@@ -1691,12 +1714,13 @@ function TeslaCarModule()
 			-- PollSettings [6] = Poll interval if car is moving
 			local pol = var.Get("PollSettings")
 			local pol_t = {}
+			local last_wake_delta = os.time() - last_woke_up_time
 			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-			log.Debug("mvStat %d, awake %d, prevAwake %d, last woke int %s, swStat %d, lckStat %d, clmStat %d",mvStat,awake, prevAwake, tostring((os.time() - last_woke_up_time)),swStat,lckStat,clmStat)
+			log.Debug("mvStat %d, awake %d, prevAwake %d, last woke int %d, swStat %d, lckStat %d, clmStat %d",mvStat,awake, prevAwake, last_wake_delta,swStat,lckStat,clmStat)
 			if mvStat == 1 then
 				interval = pol_t[6]
 				force = true
-			elseif (awake == 1 and (os.time() - last_woke_up_time) < 200) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
+			elseif (awake == 1 and (last_wake_delta) < 200) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
 				interval = pol_t[5]
 				force = true
 			elseif var.GetNumber("ChargeStatus") == 1 then
@@ -1768,7 +1792,13 @@ function TeslaCarModule()
 		_G._poll = _poll
 		_G._daily_poll = _daily_poll
 		_G._scheduled_poll = _scheduled_poll
+		_G._retry_command = _retry_command
 		
+		-- Register call backs
+		TeslaCar.RegisterCallBack("getVehicleDetails", CB_getVehicleDetails)
+		TeslaCar.RegisterCallBack("getServiceData", CB_getServiceData)
+		TeslaCar.RegisterCallBack("wakeUp", CB_wakeUp)
+		TeslaCar.RegisterCallBack("other", CB_other)
 		return true
 	end
 
@@ -1800,12 +1830,16 @@ local function TeslaCar_Child_SetTarget(newTargetValue, deviceID)
 				ac = chDev["st_ac"..newTargetValue]
 			end
 			if ac then
-				CarModule.StartAction(ac)
-				local sid = chDev.sid or SIDS.SP
-				var.Set("Target", newTargetValue, sid, deviceID)
-				var.Set("Status", newTargetValue, sid, deviceID)
+				local res, cde, data, msg = CarModule.StartAction(ac)
+				if res then
+					local sid = chDev.sid or SIDS.SP
+					var.Set("Target", newTargetValue, sid, deviceID)
+					var.Set("Status", newTargetValue, sid, deviceID)
+				else
+					log.Error("SetTarget action %s failed. Error #%d, %s", ac, cde, msg)
+				end
 			else
-				log.Debug("No action defined for child device.")
+				log.Info("No action defined for child device.")
 			end
 			-- Update the parent variable, next poll should fall back if failed.
 --			var.Set(chDev.pVar, newTargetValue)
@@ -1924,12 +1958,18 @@ function TeslaCar_DeferredInitialize(retry)
 	else	
 		log.Log("TeslaCar_DeferredInitialize start.")
 	end	
-	local res, msg = CarModule.Login()
-	if res == 200 then
+	local res, cde, data, msg = CarModule.Login()
+	if res then
 		CarModule.SetStatusMessage()
-	elseif res == 404 then
+		-- Start pollers
+		CarModule.DailyPoll(true)
+		CarModule.ScheduledPoll(true)
+	elseif cde == 404 then
 		log.DeviceMessage(pD.DEV, 2, 0, pD.pwdMessage)
 		-- UID and/or Pwd missing. Wait for setup complete.
+		-- Start pollers
+		CarModule.DailyPoll(true)
+		CarModule.ScheduledPoll(true)
 	else
 		-- Login error, retry in 5 secs.
 		if retry < 4 then
@@ -2019,15 +2059,11 @@ function TeslaCarModule_Initialize(lul_device)
 	CarModule.UpdateChildren()
 
 	-- Defer last bits of initialization for 15 seconds.
-	luup.call_delay("TeslaCar_DeferredInitialize", 15, "0")
+	luup.call_delay("TeslaCar_DeferredInitialize", 10, "0")
 
 	-- Set watches on email and password as userURL needs to be erased when changed
 	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Email", pD.DEV)
 	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Password", pD.DEV)
-
-	-- Start pollers
-	CarModule.DailyPoll(true)
-	CarModule.ScheduledPoll(true)
 
 	log.Log("TeslaCarModule_Initialize finished ")
 	utils.SetLuupFailure(0, pD.DEV)

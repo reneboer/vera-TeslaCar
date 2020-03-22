@@ -1,11 +1,8 @@
 <?xml version="1.0"?>
 <!-- 
- Vera/openLuup "TeslaCar" Plug-in
-
+ S_TeslaCar1.xml Vera/openLuup "TeslaCar" Plug-in
  Written by Rene Boer
-
- V1.5 25 February 2020
- 
+ V1.9 21 March 2020
 -->
 <scpd xmlns="urn:schemas-upnp-org:service-1-0">
 	<specVersion>
@@ -165,6 +162,10 @@
 		</action>
 		<action>
 			<name>unlockTrunc</name>
+			<relatedStateVariable>TruncStatus</relatedStateVariable>
+		</action>
+		<action>
+			<name>lockTrunc</name>
 			<relatedStateVariable>TruncStatus</relatedStateVariable>
 		</action>
 		<action>

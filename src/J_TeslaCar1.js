@@ -1,8 +1,10 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.7 6 March 2020
+// V1.8 15 March 2020
 //
+// V1.8 Changes:
+//		Added setting for Idle poll as standard 20 minutes may keep some cars awake.
 // V1.7 Changes:
 //		Added in service status to status tab.
 // V1.6 Changes:
@@ -41,6 +43,7 @@ var TeslaCar = (function (api) {
 			} else {	
 				var yesNo = [{'value':'0','label':'No'},{'value':'1','label':'Yes'}];
 				var chargeIntervals = [{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'},{'value':'20','label':'20 Min'},{'value':'30','label':'30 Min'},{'value':'60','label':'60 Min'},{'value':'90','label':'90 Min'},{'value':'120','label':'Two hours'},{'value':'240','label':'Four Hours'}];
+				var chargeIntervals1 = [{'value':'15','label':'15 Min'},{'value':'20','label':'20 Min'},{'value':'30','label':'30 Min'},{'value':'60','label':'60 Min'},{'value':'90','label':'90 Min'}];
 				var activeIntervals = [{'value':'1','label':'1 Min'},{'value':'5','label':'5 Min'},{'value':'10','label':'10 Min'},{'value':'15','label':'15 Min'}];
 				var limitIntervals = [{'value':'75','label':'75%'},{'value':'80','label':'80%'},{'value':'85','label':'85%'},{'value':'90','label':'90%'}];
 				var logLevel = [{'value':'1','label':'Error'},{'value':'2','label':'Warning'},{'value':'8','label':'Info'},{'value':'10','label':'Debug'},{'value':'100','label':'Test Debug'}];
@@ -49,6 +52,7 @@ var TeslaCar = (function (api) {
 				htmlAddInput(deviceID, 'Tesla Password', 30, 'Password')+
 				htmlAddPulldown(deviceID, 'Daily Poll ?', 'PI0', yesNo)+
 				htmlAddInput(deviceID, 'Daily Poll time (hh:mm)', 30, 'DailyPollTime')+ 
+				htmlAddPulldown(deviceID, 'Poll Interval; Idle', 'PI1', chargeIntervals1)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging > 1hr', 'PI2', chargeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Charging < 1 hr', 'PI3', chargeIntervals)+
 				htmlAddPulldown(deviceID, 'Poll Interval; Active', 'PI4', activeIntervals)+

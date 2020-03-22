@@ -1,9 +1,8 @@
 <?xml version="1.0"?>
 <!-- 
- "TeslaCar1" Plug-in
-
+ D_TeslaCar1.xml "TeslaCar1" Plug-in
+ Written by Rene Boer
  V1.4 11 February 2020
- 
 -->
 <root xmlns="urn:schemas-upnp-org:device-1-0">
 	<specVersion>
