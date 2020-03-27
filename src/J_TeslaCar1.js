@@ -1,8 +1,11 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.8 15 March 2020
+// V1.10 27 March 2020
 //
+// V1.10 Changes:
+//		Added car type to status screen.
+//		Child device selection will only show availble remote control devices.
 // V1.8 Changes:
 //		Added setting for Idle poll as standard 20 minutes may keep some cars awake.
 // V1.7 Changes:
@@ -78,8 +81,23 @@ var TeslaCar = (function (api) {
 			} else {	
 				panelHtml += 'Select the child devices you want and hit Save.<br>&nbsp;<br>';
 				var curSel = varGet(deviceID,'PluginHaveChildren');
+				var hsr = varGet(deviceID, 'CarHasSunRoof');
+				var hmcp = varGet(deviceID, 'CarHasMotorizedChargePort');
+				var cat = varGet(deviceID, 'CarCanActuateTrunks');
+				var caw = varGet(deviceID, 'CarCanActuateWindows');
 				for(var i=0;i<devList.length;i++){
-					panelHtml += htmlAddCheckBox(deviceID, devList[i].label+' Control', devList[i].value, curSel.indexOf(devList[i].value))
+					var bAdd = true;
+					var val = devList[i].value;
+					// Check car config for options, skip if not availble for remote control.
+					if (val === 'R' && hsr === '0') { bAdd = false; }
+					if (val === 'P' && hmcp === '0') { bAdd = false; }
+					if (val === 'T' && cat === '0') { bAdd = false; }
+					if (val === 'F' && cat === '0') { bAdd = false; }
+					if (val === 'W' && caw === '0') { bAdd = false; }
+					// Add option to page
+					if (bAdd) {
+						panelHtml += htmlAddCheckBox(deviceID, devList[i].label+' Control', val, curSel.indexOf(val))
+					}	
 				}
 				panelHtml += htmlAddButton(deviceID, 'updateChildSelections', 'Save');
 			}
@@ -116,6 +134,7 @@ var TeslaCar = (function (api) {
 				panelHtml += '<br>Plugin is disabled in Attributes.';
 			} else {	
 				var cn = varGet(deviceID, 'CarName');
+				var ct = varGet(deviceID, 'CarType');
 				var lat = Number.parseFloat(varGet(deviceID, 'Latitude')).toFixed(4);
 				var lng = Number.parseFloat(varGet(deviceID, 'Longitude')).toFixed(4);
 				var clh = varGet(deviceID, 'LocationHome');
@@ -145,6 +164,7 @@ var TeslaCar = (function (api) {
 				}
 				panelHtml += '<p><div class="col-12" style="overflow-x: auto;"><table class="table-responsive-OFF table-sm"><tbody>'+
 					'<tr><td>Tesla Car name </td><td>'+cn+'</td></tr>'+
+					'<tr><td>Tesla Car type </td><td>'+ct+'</td></tr>'+
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>Last Car update received at&nbsp;&nbsp;</td><td>'+ _getFormattedDate(lcst) + '</td></tr>'+
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
@@ -234,7 +254,7 @@ var TeslaCar = (function (api) {
 
 	// Add a standard input for a plug-in variable.
 	function htmlAddInput(di, lb, si, vr, sid, df) {
-		var val = (typeof df != 'undefined') ? df : varGet(di,vr,sid);
+		var val = (typeof df !== 'undefined') ? df : varGet(di,vr,sid);
 		var typ = (vr.toLowerCase() == 'password') ? 'type="password"' : 'type="text"';
 		var html = '<div class="clearfix labelInputContainer">'+
 					'<div class="pull-left inputLabel" style="width:280px;">'+lb+'</div>'+

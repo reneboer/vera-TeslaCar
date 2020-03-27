@@ -346,7 +346,7 @@
 							},
 							"Command": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
-								"Action": "SetAutoSoftwareInstall",
+								"Action": "setAutoSoftwareInstall",
 								"Parameters": [
 									{
                                         "Name": "newTargetValue",
@@ -367,7 +367,7 @@
 							},
 							"Command": {
 								"Service": "urn:rboer-com:serviceId:TeslaCar1",
-								"Action": "SetAutoSoftwareInstall",
+								"Action": "setAutoSoftwareInstall",
 								"Parameters": [
 									{
                                         "Name": "newTargetValue",
@@ -490,7 +490,7 @@
     "eventList2":[
 		{
 			"id": 1,
-			"label": { "text": "Charging is turned on or off" },
+			"label": { "lang_tag": "ui7_charging_on_or_off", "text": "Charging is turned on or off" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -509,13 +509,13 @@
 				],
 				"name": "ChargeStatus",
 				"comparisson": "=",
-				"prefix": {	"text": "Which mode" },
-				"suffix": {	}
+				"prefix": {},
+				"suffix": {}
 			}]
 		},
 		{
 			"id": 2,
-			"label": { "text": "Climate is turned on or off" },
+			"label": { "lang_tag": "ui7_climate_on_or_off", "text": "Climate is turned on or off" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -534,13 +534,13 @@
 				],
 				"name": "ClimateStatus",
 				"comparisson": "=",
-				"prefix": { "text": "Which mode" },
-				"suffix": {	}
+				"prefix": {},
+				"suffix": {}
 			}]
 		},
 		{
 			"id": 3,
-			"label": { "text": "Inside temperature goes above" },
+			"label": { "lang_tag": "ui7_inside_temp_goes_below", "text": "Inside temperature goes above" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -550,7 +550,7 @@
 				"comparisson": ">",
 				"prefix": {
 					"lang_tag": "ui7_temperature",
-					"text": "temperature"
+					"text": "Temperature"
 				},
 				"suffix": {
 					"lang_tag": "ui7_degrees",
@@ -561,7 +561,7 @@
 		}, 
 		{
 			"id": 4,
-			"label": { "text": "Inside temperature goes below" },
+			"label": { "lang_tag": "ui7_inside_temp_goes_below", "text": "Inside temperature goes below" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -571,7 +571,7 @@
 				"comparisson": "<",
 				"prefix": {
 					"lang_tag": "ui7_temperature",
-					"text": "temperature"
+					"text": "Temperature"
 				},
 				"suffix": {
 					"lang_tag": "ui7_degrees",
@@ -582,7 +582,7 @@
 		},
 		{
 			"id": 5,
-			"label": { "text": "Outside temperature goes above" },
+			"label": { "lang_tag": "ui7_outside_temp_goes_above", "text": "Outside temperature goes above" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -592,7 +592,7 @@
 				"comparisson": ">",
 				"prefix": {
 					"lang_tag": "ui7_temperature",
-					"text": "temperature"
+					"text": "Temperature"
 				},
 				"suffix": {
 					"lang_tag": "ui7_degrees",
@@ -603,7 +603,7 @@
 		}, 
 		{
 			"id": 6,
-			"label": { "text": "Outside temperature goes below" },
+			"label": { "lang_tag": "ui7_outside_temp_goes_below", "text": "Outside temperature goes below" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"norepeat": "1",
 			"argumentList": [{
@@ -613,7 +613,7 @@
 				"comparisson": "<",
 				"prefix": {
 					"lang_tag": "ui7_temperature",
-					"text": "temperature"
+					"text": "Temperature"
 				},
 				"suffix": {
 					"lang_tag": "ui7_degrees",
@@ -624,10 +624,7 @@
 		},
 		{
 			"id": 7,
-			"label": {
-				"lang_tag": "ui7_battery_level_goes_below",
-				"text": "Battery level goes below"
-			},
+			"label": { "lang_tag": "ui7_battery_level_goes_below", "text": "Battery level goes below" },
 			"serviceId": "urn:micasaverde-com:serviceId:HaDevice1",
 			"argumentList": [
 				{
@@ -656,10 +653,7 @@
 		},
 		{
 			"id": 8,
-			"label": {
-				"lang_tag": "ui7_battery_level_goes_above",
-				"text": "Battery level goes above"
-			},
+			"label": { "lang_tag": "ui7_battery_level_goes_above", "text": "Battery level goes above" },
 			"serviceId": "urn:micasaverde-com:serviceId:HaDevice1",
 			"argumentList": [
 				{
@@ -688,7 +682,7 @@
 		},
 		{
 			"id": 9,
-			"label": { "text": "A door is opened or closed" },
+			"label": { "lang_tag": "ui7_door_opened_or_closed", "text": "A door is opened or closed" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"argumentList": [
 				{
@@ -698,38 +692,35 @@
 					"allowedValueList": [
 						{
 							"DFOpened": "{\"dr\":0,\"df\":1,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ driver front door is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ driver front door is opened" }
 						},
 						{
 							"DROpened": "{\"dr\":1,\"df\":0,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ driver rear door is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ driver rear door is opened" }
 						},
 						{
 							"PFOpened": "{\"dr\":0,\"df\":0,\"pr\":0,\"pf\":1}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ passenger front door is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ passenger front door is opened" }
 						},
 						{
 							"PROpened": "{\"dr\":0,\"df\":0,\"pr\":1,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ passenger rear door is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ passenger rear door is opened" }
 						},
 						{
 							"Closed": "{\"dr\":0,\"df\":0,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ doors are closed" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ doors are closed" }
 						}
 					],
 					"name": "DoorsStatus",
 					"comparisson": "=",
-					"prefix": {
-						"lang_tag": "ui7_which_mode",
-						"text": "Which mode"
-					},
+					"prefix": {},
 					"suffix": {}
 				}
 			]
 		},
 		{
 			"id": 10,
-			"label": { "text": "A window is opened or closed" },
+			"label": { "lang_tag": "ui7_window_opened_or_closed", "text": "A window is opened or closed" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"argumentList": [
 				{
@@ -739,38 +730,35 @@
 					"allowedValueList": [
 						{
 							"DFOpened": "{\"dr\":0,\"df\":1,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ driver front window is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ driver front window is opened" }
 						},
 						{
 							"DROpened": "{\"dr\":1,\"df\":0,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ driver rear window is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ driver rear window is opened" }
 						},
 						{
 							"PFOpened": "{\"dr\":0,\"df\":0,\"pr\":0,\"pf\":1}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ passenger front window is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ passenger front window is opened" }
 						},
 						{
 							"PROpened": "{\"dr\":0,\"df\":0,\"pr\":1,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ passenger rear window is open" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ passenger rear window is opened" }
 						},
 						{
 							"Closed": "{\"dr\":0,\"df\":0,\"pr\":0,\"pf\":0}",
-							"HumanFriendlyText": { "text": "_DEVICE_NAME_ window are closed" }
+							"HumanFriendlyText": { "text": "Whenever _DEVICE_NAME_ window are closed" }
 						}
 					],
 					"name": "WindowsStatus",
 					"comparisson": "=",
-					"prefix": {
-						"lang_tag": "ui7_which_mode",
-						"text": "Which mode"
-					},
+					"prefix": {},
 					"suffix": {}
 				}
 			]
 		},
 		{
 			"id": 11,
-			"label": { "text": "The car is locked or unlocked" },
+			"label": { "lang_tag": "ui7_car_unlocked_or_locked", "text": "The car is locked or unlocked" },
 			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
 			"argumentList": [
 				{
@@ -781,23 +769,183 @@
 						{
 							"Unlocked": "0",
 							"HumanFriendlyText": {
-								"lang_tag": "ui7_hft_lock_opened",
-								"text": "_DEVICE_NAME_ is locked"
+								"lang_tag": "ui7_hft_unlocked",
+								"text": "Whenever _DEVICE_NAME_ is unlocked"
 							}
 						},
 						{
 							"Locked": "1",
 							"HumanFriendlyText": {
-								"lang_tag": "ui7_hft_window_lock_closed",
-								"text": "_DEVICE_NAME_ is unlocked"
+								"lang_tag": "ui7_hft_locked",
+								"text": "Whenever _DEVICE_NAME_ is locked"
 							}
 						}
 					],
 					"name": "LockedStatus",
 					"comparisson": "=",
+					"prefix": {},
+					"suffix": {}
+				}
+			]
+		},
+		{
+			"id": 12,
+			"label": { "lang_tag": "ui7_car_awake_or_asleep", "text": "The car is awake or asleep" },
+			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
+			"argumentList": [
+				{
+					"id": 1,
+					"dataType": "boolean",
+					"defaultValue": "1",
+					"allowedValueList": [
+						{
+							"Asleep": "0",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_asleep",
+								"text": "Whenever _DEVICE_NAME_ goes asleep"
+							}
+						},
+						{
+							"Awake": "1",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_awake",
+								"text": "Whenever _DEVICE_NAME_ wakes up"
+							}
+						}
+					],
+					"name": "CarIsAwake",
+					"comparisson": "=",
+					"prefix": {},
+					"suffix": {}
+				}
+			]
+		},
+		{
+			"id": 13,
+			"label": { "lang_tag": "ui7_car_moving_or_parked", "text": "The car is moving or parked" },
+			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
+			"argumentList": [
+				{
+					"id": 1,
+					"dataType": "boolean",
+					"defaultValue": "1",
+					"allowedValueList": [
+						{
+							"Parked": "0",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_parked",
+								"text": "Whenever _DEVICE_NAME_ is parked"
+							}
+						},
+						{
+							"Moving": "1",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_moving",
+								"text": "Whenever _DEVICE_NAME_ is moving"
+							}
+						}
+					],
+					"name": "MovingStatus",
+					"comparisson": "=",
+					"prefix": {},
+					"suffix": {}
+				}
+			]
+		},
+		{
+			"id": 14,
+			"label": { "lang_tag": "ui7_car_at_home", "text": "The car is at home" },
+			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
+			"argumentList": [
+				{
+					"id": 1,
+					"dataType": "boolean",
+					"defaultValue": "1",
+					"allowedValueList": [
+						{
+							"Away": "0",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_away",
+								"text": "Whenever _DEVICE_NAME_ is away"
+							}
+						},
+						{
+							"Athome": "1",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_at_home",
+								"text": "Whenever _DEVICE_NAME_ is located at home"
+							}
+						}
+					],
+					"name": "LocationHome",
+					"comparisson": "=",
+					"prefix": {},
+					"suffix": {}
+				}
+			]
+		},
+		{
+			"id": 15,
+			"label": { "lang_tag": "ui7_sunroof_open_or_closed", "text": "The sunroof is open or closed" },
+			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
+			"argumentList": [
+				{
+					"id": 1,
+					"dataType": "boolean",
+					"defaultValue": "1",
+					"allowedValueList": [
+						{
+							"Closed": "0",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_closed",
+								"text": "Whenever _DEVICE_NAME_ sunroof is closed"
+							}
+						},
+						{
+							"Open": "1",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_open",
+								"text": "Whenever _DEVICE_NAME_ sunroof is opened"
+							}
+						}
+					],
+					"name": "SunroofStatus",
+					"comparisson": "=",
+					"prefix": {},
+					"suffix": {}
+				}
+			]
+		},
+		{
+			"id": 16,
+			"label": { "lang_tag": "ui7_chargeport_open_or_closed", "text": "The charge port is open or closed" },
+			"serviceId": "urn:rboer-com:serviceId:TeslaCar1",
+			"argumentList": [
+				{
+					"id": 1,
+					"dataType": "boolean",
+					"defaultValue": "1",
+					"allowedValueList": [
+						{
+							"Unlocked": "0",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_closed",
+								"text": "Whenever _DEVICE_NAME_ charge port is closed"
+							}
+						},
+						{
+							"Locked": "1",
+							"HumanFriendlyText": {
+								"lang_tag": "ui7_hft_open",
+								"text": "Whenever _DEVICE_NAME_ charge port is opened"
+							}
+						}
+					],
+					"name": "ChargePortDoorOpen",
+					"comparisson": "=",
 					"prefix": {
-						"lang_tag": "ui7_which_mode",
-						"text": "Which mode"
+						"lang_tag": "ui7_which_state",
+						"text": "Which state"
 					},
 					"suffix": {}
 				}

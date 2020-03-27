@@ -2,7 +2,7 @@
 <!-- 
  S_TeslaCar1.xml Vera/openLuup "TeslaCar" Plug-in
  Written by Rene Boer
- V1.9 21 March 2020
+ V1.10 27 March 2020
 -->
 <scpd xmlns="urn:schemas-upnp-org:service-1-0">
 	<specVersion>
@@ -24,6 +24,16 @@
 			<name>IconSet</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>OutsideTemp</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i4</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>InsideTemp</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i4</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>Status</name>
@@ -58,37 +68,42 @@
 		<stateVariable>
 			<name>ChargePortStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>ClimateStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>ChargeStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>CarIsAwake</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>DoorsStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>WindowsStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>FruncStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>TruncStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>SoftwareStatus</name>
@@ -98,7 +113,7 @@
 		<stateVariable>
 			<name>SunroofStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>Mileage</name>
@@ -107,6 +122,16 @@
 		</stateVariable>
 		<stateVariable>
 			<name>LocationHome</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>LockedStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>MovingStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
 		</stateVariable>
@@ -128,17 +153,22 @@
 		<stateVariable>
 			<name>PowerSupplyConnected</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>PowerPlugState</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>AutoSoftwareInstall</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargePortDoorOpen</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
 		</stateVariable>
 	</serviceStateTable>
 	<actionList>

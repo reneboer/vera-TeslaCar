@@ -2,10 +2,18 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.9, 21 March 2020
+	V1.10, 27 March 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.10 Changes:
+		- Improved car config handling.
+		- Corrected sun roof handling.
+		- Completed Vera scene triggers configurations in json.
+		- Status temperature units use Vera setting, rather then car.
+		- Hardened var module.
+		- Added all car variables to startup routine.
+		- Fixed json for setAutoSoftwareInstall control.
 	V1.9 Changes:
 		- Improved car wake up and send queue handling.
 		- Changed call back to one handler for all with registrable call backs for specific commands as needed.
@@ -38,31 +46,18 @@
 	V1.2 changes:
 		- added command prepareDeparture that will stop charging and unlatch the power cable.
 	V1.1 changes:
-		- Tesla API version 6 does not seem to report windows status, set to closed for that version.
+		- Tesla API for some model S does not seem to report windows status, set to closed for that version.
 		- Similar for cable connected or not. Using derived value form charge_status instead for V6.
 		
 	To-do
-		1) On models S & X, when trunk is open, actuate_trunk will close it.
-		3) Check for ChargPortLatched to be 1 status.
-		5) Smart, auto tuning preheat
+		Smart, auto tuning preheat
 
-	https://www.teslaapi.io/
-	https://tesla-api.timdorr.com/
-	https://github.com/timdorr/tesla-api
-	https://github.com/mseminatore/TeslaJS
-	https://support.teslafi.com/knowledge-bases/2/articles/640-enabling-sleep-settings-to-limit-vampire-loss
-	https://github.com/dirkvm/teslams
-	https://github.com/zabuldon/teslajsonpy/tree/master/teslajsonpy
-	https://github.com/irritanterik/homey-tesla.com
-	https://github.com/jonahwh/tesla-api-client/blob/master/swagger.yml
-	
 ]]
 
 local ltn12 	= require("ltn12")
 local json 		= require("dkjson")
 local https     = require("ssl.https")
 local http		= require("socket.http")
---local url 		= require("socket.url")
 local TeslaCar
 local CarModule
 local log
@@ -93,7 +88,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.9",
+	Version = "1.10",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
@@ -131,8 +126,7 @@ local childDeviceMap = {
 						local tt = var.GetNumber("ClimateTargetTemp")
 						var.Set("CurrentTemperature", it, SIDS.TEMP, chDevID)
 						var.Set("CurrentSetpoint", tt, SIDS.HEAT, chDevID)
-						local clim = var.GetNumber("ClimateStatus")
-						if clim == 0 then
+						if not var.GetBoolean("ClimateStatus") then
 							var.Set("ModeStatus", "Off", SIDS.HVAC_U, chDevID)
 						else
 							var.Set("ModeStatus", "HeatOn", SIDS.HVAC_U, chDevID)
@@ -175,7 +169,7 @@ local childDeviceMap = {
 			},
 	["L"] = { typ = "L", df = "D_DoorLock1", sid = SIDS.DOOR, json = "D_DoorLock_NoPin.json", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
 					sf = function(chDevID)
-						local status = var.GetNumber("LockedStatus")
+						local status = var.GetBoolean("LockedStatus") and 1 or 0
 						var.Set("Status", status, SIDS.DOOR, chDevID)
 						var.Set("Target", status, SIDS.DOOR, chDevID)
 					end 
@@ -196,7 +190,7 @@ local childDeviceMap = {
 			},
 	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc", st_ac1 = "lockTrunc",
 					sf = function(chDevID)
-						local status = var.GetNumber("TrunkStatus") == 0 and 1 or 0
+						local status = var.GetBoolean("TrunkStatus") and 1 or 0
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
@@ -220,6 +214,7 @@ local childDeviceMap = {
 						-- Set SOC level to new target, but must be between 50 and 100%
 						local soc = tonumber(newLoadlevelTarget)
 						if soc < 50 then soc = 50 end
+						if soc > 100 then soc = 100 end
 						local res, cde, data, msg = CarModule.StartAction("setChargeLimit", soc)
 						if res then
 							var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
@@ -229,10 +224,10 @@ local childDeviceMap = {
 						end
 					end,
 					sf = function(chDevID)
-						local status = var.Get("ChargeStatus")
+						local status = var.GetBoolean("ChargeStatus") and 1 or 0
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
-						local soc = var.Get("ChargeLimitSOC")
+						local soc = var.GetNumber("ChargeLimitSOC")
 						var.Set("LoadLevelStatus", soc, SIDS.DIM, chDevID)
 						var.Set("LoadLevelTarget", soc, SIDS.DIM, chDevID)
 						var.Set("BatteryLevel", var.Get("BatteryLevel", SIDS.HA), SIDS.HA, chDevID)
@@ -259,7 +254,7 @@ local ICONS = {
 	UNCONFIGURED = -1
 }
 
--- API getting and setting variables and attributes from Vera more efficient.
+-- API getting and setting variables and attributes from Vera more efficient and with parameter type checks.
 local function varAPI()
 	local def_sid, def_dev = "", 0
 	
@@ -270,32 +265,99 @@ local function varAPI()
 	
 	-- Get variable value
 	local function _get(name, sid, device)
-		local value = luup.variable_get(sid or def_sid, name, tonumber(device or def_dev))
+		if type(name) ~= "string" then
+			luup.log("var.Set: variable name not a string.", 1)
+			return false
+		end	
+		local value, ts = luup.variable_get(sid or def_sid, name, tonumber(device or def_dev))
 		return (value or "")
 	end
 
-	-- Get variable value as number type
-	local function _getnum(name, sid, device)
-		local value = luup.variable_get(sid or def_sid, name, tonumber(device or def_dev))
-		local num = tonumber(value,10)
-		return (num or 0)
+	-- Get variable value as string type
+	local function _get_string(name, sid, device)
+		local value = _get(name, sid, device)
+		if type(value) ~= "string" then
+			luup.log("var.GetString: wrong data type :"..type(value).." for variable "..(name or "unknown"), 2)
+			return false
+		end
+		return value
 	end
 	
+	-- Get variable value as number type
+	local function _get_num(name, sid, device)
+		local value = _get(name, sid, device)
+		local num = tonumber(value,10)
+		if type(num) ~= "number" then
+			luup.log("var.GetNumber: wrong data type :"..type(value).." for variable "..(name or "unknown"), 2)
+			return false
+		end
+		return num
+	end
+	
+	-- Get variable value as boolean type. Convert 0/1 to true/false
+	local function _get_bool(name, sid, device)
+		local value = _get(name, sid, device)
+		if value ~= "0" and value ~= "1" then
+			luup.log("var.GetBoolean: wrong data value :"..(value or "").." for variable "..(name or "unknown"), 2)
+			return false
+		end
+		return (value == "1")
+	end
+
 	-- Set variable value
 	local function _set(name, value, sid, device)
+		if type(name) ~= "string" then
+			luup.log("var.Set: variable name not a string.", 1)
+			return false
+		end	
 		local sid = sid or def_sid
 		local device = tonumber(device or def_dev)
-		local old = luup.variable_get(sid, name, device)
-		if (tostring(value) ~= tostring(old or "")) then 
+		local old, ts = luup.variable_get(sid, name, device) or ""
+		if (tostring(value) ~= tostring(old)) then 
 			luup.variable_set(sid, name, value, device)
 		end
+		return true
+	end
+
+	-- Set string variable value. If value type is not a string, do not set.
+	local function _set_string(name, value, sid, device)
+		if type(value) ~= "string" then
+			luup.log("var.SetString: wrong data type :"..type(value).." for variable "..(name or "unknown"), 2)
+			return false
+		end
+		return _set(name, value, sid, device)
+	end
+
+	-- Set number variable value. If value type is not a number, do not set.
+	local function _set_num(name, value, sid, device)
+		if type(value) ~= "number" then
+			luup.log("var.SetNumber: wrong data type :"..type(value).." for variable "..(name or "unknown"), 2)
+			return false
+		end
+		return _set(name, value, sid, device)
+	end
+
+	-- Set boolean variable value. If value is not o/1 or true/false, do not set.
+	local function _set_bool(name, value, sid, device)
+		if type(value) == "number" then
+			if value == 1 or value == 0 then
+				return _set(name, value, sid, device)
+			else	
+				luup.log("var.SetBoolean: wrong value. Expect 0/1.", 2)
+				return false
+			end
+		elseif type(value) == "boolean" then
+			return _set(name, (value and 1 or 0), sid, device)
+		end
+		luup.log("var.SetBoolean: wrong data type :"..type(value).." for variable "..(name or "unknown"), 2)
+		return false
 	end
 
 	-- create missing variable with default value or return existing
 	local function _default(name, default, sid, device)
 		local sid = sid or def_sid
 		local device = tonumber(device or def_dev)
-		local value = luup.variable_get(sid, name, device) 
+		local value, ts = luup.variable_get(sid, name, device) 
 		if (not value) then
 			value = default	or ""
 			luup.variable_set(sid, name, value, device)	
@@ -316,9 +378,14 @@ local function varAPI()
 	end
 	
 	return {
-		Get = _get,
 		Set = _set,
-		GetNumber = _getnum,
+		SetString = _set_string,
+		SetNumber = _set_num,
+		SetBoolean = _set_bool,
+		Get = _get,
+		GetString = _get_string,
+		GetNumber = _get_num,
+		GetBoolean = _get_bool,
 		Default = _default,
 		GetAttribute = _getattr,
 		SetAttribute = _setattr,
@@ -1075,18 +1142,10 @@ function TeslaCarModule()
 		var.Set("DisplayLine2", msg, SIDS.ALTUI)
 	end
 	
-	-- Some generic conversion functions for variables
-	local _bool_to_zero_one = function(bstate)
-		if type(bstate) == "boolean" then
-			return bstate and "1" or "0"
-		else
-			return tostring(bstate or 0)
-		end
-	end
-	
 	-- All range values are in miles per hour, convert to KM per hour if GUI is set to it.
 	-- Trunkate to whole number.
 	local _convert_range_miles_to_units = function(miles, typ)
+		local miles = miles or 0
 		local units
 		if typ == "C" then
 			units = var.Get("GuiChargeRateUnits")
@@ -1121,15 +1180,15 @@ function TeslaCarModule()
 	
 	local function _login()
 		-- Get login details
-		local email = var.Get("Email")
-		local password = var.Get("Password")
+		local email = var.GetString("Email")
+		local password = var.GetString("Password")
 		-- If VIN is set look for car with that VIN, else first found is used.
-		local vin = var.Get("VIN")
+		local vin = var.GetString("VIN")
 		if email ~= "" and password ~= "" then
 			TeslaCar.Initialize(email, password, vin)
 			local res, cde, data, msg = TeslaCar.Authenticate(true)
 			if res then
-				var.Set("LastLogin", os.time())
+				var.SetNumber("LastLogin", os.time())
 				res, cde, data, msg = TeslaCar.GetVehicle()
 				if res then
 					readyToPoll = true
@@ -1182,7 +1241,7 @@ function TeslaCarModule()
 					chDev.sf(chDev.devID)
 				else
 					-- Get the value from parent variable
-					local val = var.Get(chDev.pVar)
+					local val = tostring(var.Get(chDev.pVar))
 					log.Debug("parent variable %s, value %s, to update %s" ,chDev.pVar, val, chDev.var)
 					-- Update the child variable
 					var.Set(chDev.var, val, chDev.sid, chDev.devID)
@@ -1231,21 +1290,22 @@ function TeslaCarModule()
 			var.Set("DisplayLine2", sf("Charging; range %s%s, time remaining %d:%02d.", bl, units, hrs, mins), SIDS.ALTUI)
 			icon = ICONS.CHARGING
 		else	
-			if var.GetNumber("PowerSupplyConnected") == 1 and var.GetNumber("PowerPlugState") == 1 then
+			if var.GetBoolean("PowerSupplyConnected") and var.GetBoolean("PowerPlugState") then
 				var.Set("DisplayLine2", "Power cable connected, not charging.", SIDS.ALTUI)
 				icon = ICONS.CONNECTED
 			end
 			var.Set("ChargeMessage", sf("Battery %s%%, range %s%s.", bl, br, units))
 		end
 		-- Set user messages and icons based on actual values
-		if var.GetNumber("ClimateStatus") == 1 then
+		if var.GetBoolean("ClimateStatus") then
 			var.Set("ClimateMessage", "Climatizing On")
 			var.Set("DisplayLine2", "Climatizing On.", SIDS.ALTUI)
 			icon = ICONS.CLIMATE
 		else
 			local inst = var.Get("InsideTemp")
 			local outt = var.Get("OutsideTemp")
-			local units = var.Get("GuiTempUnits")
+--			local units = var.Get("GuiTempUnits")
+			local units = pD.veraTemperatureScale
 			var.Set("ClimateMessage", sf("Inside temp %s%s, outside temp %s%s", inst, units, outt, units))
 		end	
 		local txt = buildStatusText(json.decode(var.Get("DoorsStatus")))
@@ -1264,28 +1324,28 @@ function TeslaCarModule()
 		else	
 			var.Set("WindowsMessage", "Closed")
 		end
-		if var.GetNumber("FrunkStatus") == 1 then
+		if var.GetBoolean("FrunkStatus") then
 			var.Set("FrunkMessage", "Unlocked.")
 			var.Set("DisplayLine2", "Frunk is unlocked.", SIDS.ALTUI)
 			icon = ICONS.FRUNK
 		else	
 			var.Set("FrunkMessage", "Locked")
 		end
-		if var.GetNumber("TrunkStatus") == 1 then
+		if var.GetBoolean("TrunkStatus") then
 			var.Set("TrunkMessage", "Unlocked.")
 			var.Set("DisplayLine2", "Trunk is unlocked.", SIDS.ALTUI)
 			icon = ICONS.TRUNK
 		else	
 			var.Set("TrunkMessage", "Locked")
 		end
-		if var.GetNumber("LockedStatus") == 0 then
+		if not var.GetBoolean("LockedStatus") then
 			var.Set("LockedMessage", "Car is unlocked.")
 			var.Set("DisplayLine2", "Car is unlocked.", SIDS.ALTUI)
 			icon = ICONS.UNLOCKED
 		else	
 			var.Set("LockedMessage", "Locked")
 		end
-		if var.GetNumber("MovingStatus") == 1 then
+		if var.GetBoolean("MovingStatus") then
 			var.Set("DisplayLine2", "Car is moving.", SIDS.ALTUI)
 			icon = ICONS.MOVING
 		else	
@@ -1311,12 +1371,12 @@ function TeslaCarModule()
 	-- Process the values returned for drive state
 	local function _update_gui_settings(settings)
 		if settings then
-			var.Set("Gui24HourClock", _bool_to_zero_one(settings.gui_24_hour_time))
-			var.Set("GuiChargeRateUnits", settings.gui_charge_rate_units or "km/hr")
-			var.Set("GuiDistanceUnits", settings.gui_distance_units or "km/hr")
-			var.Set("GuiTempUnits", settings.gui_temperature_units or "C")
-			var.Set("GuiRangeDisplay", settings.gui_range_display or "")
-			var.Set("GuiSettingsTS", settings.timestamp or os.time())
+			var.SetBoolean("Gui24HourClock", settings.gui_24_hour_time or false)
+			var.SetString("GuiChargeRateUnits", settings.gui_charge_rate_units or "km/hr")
+			var.SetString("GuiDistanceUnits", settings.gui_distance_units or "km/hr")
+			var.SetString("GuiTempUnits", settings.gui_temperature_units or "C")
+			var.SetString("GuiRangeDisplay", settings.gui_range_display or "")
+			var.SetNumber("GuiSettingsTS", settings.timestamp or os.time())
 			return true
 		else
 			log.Warning("Update: No vehicle settings found")
@@ -1327,11 +1387,13 @@ function TeslaCarModule()
 	-- Process the values returned for vehicle config
 	local function _update_vehicle_config(config)
 		if config then
-			var.Set("CarType", config.car_type or "")
-			var.Set("CarHasRearSeatHeaters", config.rear_seat_heaters or 0)
-			var.Set("CarHasSunRoof", config.sun_roof_installed or 0)
-			var.Set("CarHasMotorizedChargePort", _bool_to_zero_one(config.motorized_charge_port))
-			var.Set("CarCanAccutateTrunks", _bool_to_zero_one(config.motorized_charge_port))
+			var.SetString("CarType", config.car_type or "")
+			var.SetBoolean("CarHasRearSeatHeaters", config.rear_seat_heaters or false)
+			-- Sunroof value can be missing
+			local has_sunroof = config.sun_roof_installed or 0
+			var.SetBoolean("CarHasSunRoof", (has_sunroof > 0))
+			var.SetBoolean("CarHasMotorizedChargePort", config.motorized_charge_port or false)
+			var.SetBoolean("CarCanActuateTrunks", config.can_actuate_trunks or false)
 			return true
 		else
 			log.Warning("Update: No vehicle configuration found")
@@ -1345,25 +1407,21 @@ function TeslaCarModule()
 			-- Update location details
 			local lat = (state.latitude or 0)
 			local lng = (state.longitude or 0)
-			var.Set("Latitude", lat)
-			var.Set("Longitude", lng)
+			var.SetNumber("Latitude", lat)
+			var.SetNumber("Longitude", lng)
 			-- Compare to home location and set/clear at home flag when within 500 m
 			lat = tonumber(lat) or luup.latitude
 			lng = tonumber(lng) or luup.longitude
 			local radius = var.GetNumber("AtLocationRadius")
-			if _distance(lat, lng, luup.latitude, luup.longitude) < radius then
-				var.Set("LocationHome", 1)
-			else
-				var.Set("LocationHome", 0)
-			end
-			var.Set("LocationTS", state.gps_as_of or 0)
+			var.SetBoolean("LocationHome", (_distance(lat, lng, luup.latitude, luup.longitude) < radius))
+			var.SetNumber("LocationTS", state.gps_as_of)
 
 			-- Update other drive details
-			var.Set("MovingStatus", (state.shift_state and state.shift_state ~= 'P') and 1 or 0)
-			var.Set("DriveSpeed", state.speed or 0)
-			var.Set("DrivePower", state.power or 0)
-			var.Set("DriveShiftState", state.shift_state or 0)
-			var.Set("DriveStateTS", state.timestamp or os.time())
+			var.SetBoolean("MovingStatus", (state.shift_state and state.shift_state ~= "P") or false)
+			var.SetNumber("DriveSpeed", state.speed or 0)
+			var.SetNumber("DrivePower", state.power or 0)
+			var.SetString("DriveShiftState", state.shift_state or "P")
+			var.SetNumber("DriveStateTS", state.timestamp)
 			return true
 		else
 			log.Warning("Update: No vehicle driving state found")
@@ -1374,23 +1432,23 @@ function TeslaCarModule()
 	-- Process the values returned for climate state
 	local function _update_climate_state(state)
 		if state then
-			var.Set("BatteryHeaterStatus", _bool_to_zero_one(state.battery_heater))
-			var.Set("ClimateStatus", _bool_to_zero_one(state.is_climate_on))
-			var.Set("InsideTemp", _convert_temp_units(state.inside_temp))
-			var.Set("MinInsideTemp", _convert_temp_units(state.min_avail_temp))
-			var.Set("MaxInsideTemp", _convert_temp_units(state.max_avail_temp))
-			var.Set("OutsideTemp",_convert_temp_units(state.outside_temp))
-			var.Set("ClimateTargetTemp", _convert_temp_units(state.driver_temp_setting))
-			var.Set("FrontDefrosterStatus", _bool_to_zero_one(state.is_front_defroster_on))
-			var.Set("RearDefrosterStatus", _bool_to_zero_one(state.is_rear_defroster_on))
-			var.Set("PreconditioningStatus", _bool_to_zero_one(state.is_preconditioning))
-			var.Set("FanStatus", state.fan_status or 0)
-			var.Set("SeatHeaterStatus", state.seat_heater_left or 0)
-			var.Set("MirrorHeaterStatus", _bool_to_zero_one(state.side_mirror_heaters))
-			var.Set("SteeringWeelHeaterStatus", _bool_to_zero_one(state.steering_wheel_heater))
-			var.Set("WiperBladesHeaterStatus", _bool_to_zero_one(state.wiper_blade_heater))
-			var.Set("SmartPreconditioning", _bool_to_zero_one(state.smart_preconditioning))
-			var.Set("ClimateStateTS", state.timestamp or os.time())
+			var.SetBoolean("BatteryHeaterStatus", state.battery_heater or false)
+			var.SetBoolean("ClimateStatus", state.is_climate_on or false)
+			var.SetNumber("InsideTemp", _convert_temp_units(state.inside_temp))
+			var.SetNumber("MinInsideTemp", _convert_temp_units(state.min_avail_temp))
+			var.SetNumber("MaxInsideTemp", _convert_temp_units(state.max_avail_temp))
+			var.SetNumber("OutsideTemp",_convert_temp_units(state.outside_temp))
+			var.SetNumber("ClimateTargetTemp", _convert_temp_units(state.driver_temp_setting))
+			var.SetBoolean("FrontDefrosterStatus", state.is_front_defroster_on or false)
+			var.SetBoolean("RearDefrosterStatus", state.is_rear_defroster_on or false)
+			var.SetBoolean("PreconditioningStatus", state.is_preconditioning or false)
+			var.SetNumber("FanStatus", state.fan_status or 0)
+			var.SetNumber("SeatHeaterStatus", state.seat_heater_left or 0)
+			var.SetBoolean("MirrorHeaterStatus", state.side_mirror_heaters or false)
+			var.SetBoolean("SteeringWeelHeaterStatus", state.steering_wheel_heater or false)
+			var.SetBoolean("WiperBladesHeaterStatus", state.wiper_blade_heater or false)
+			var.SetBoolean("SmartPreconditioning", state.smart_preconditioning or false)
+			var.SetNumber("ClimateStateTS", state.timestamp)
 			return true
 		else
 			log.Warning("Update: No vehicle climate state found")
@@ -1402,52 +1460,40 @@ function TeslaCarModule()
 	local function _update_charge_state(state)
 		if state then
 			if state.charging_state == "Charging" and state.time_to_full_charge and state.time_to_full_charge > 0 then
-				var.Set("RemainingChargeTime", state.time_to_full_charge)
+				var.SetNumber("RemainingChargeTime", state.time_to_full_charge)
 			else
 				var.Set("RemainingChargeTime", 0)
 			end
-			if state.battery_range then var.Set("BatteryRange", _convert_range_miles_to_units(state.battery_range, "D")) end
-			if state.battery_level then var.Set("BatteryLevel", state.battery_level , SIDS.HA) end
+			var.SetNumber("BatteryRange", _convert_range_miles_to_units(state.battery_range, "D"))
+			var.SetNumber("BatteryLevel", state.battery_level or 0, SIDS.HA)
 			if state.conn_charge_cable then
 				-- Is in api_version 7, but not before I think
-				if state.conn_charge_cable ~= "<invalid>" then
-					var.Set("PowerPlugState", 1)
-				else	
-					var.Set("PowerPlugState", 0)
-				end
+				var.SetBoolean("PowerPlugState", (state.conn_charge_cable ~= "<invalid>"))
 			else
 				-- V6 and prior.
-				if state.charging_state == "Disconnected" or state.charging_state == "NoPower" then
-					var.Set("PowerPlugState", 0)
-				else
-					var.Set("PowerPlugState", 1)
-				end
+				var.SetBoolean("PowerPlugState", not (state.charging_state == "Disconnected" or state.charging_state == "NoPower"))
 			end
 			if state.charging_state then 
 				if state.charging_state == "Charging" then
-					var.Set("ChargeStatus", 1) 
-					var.Set("PowerSupplyConnected", 1)
-				elseif state.charging_state == "Complete" then
-					var.Set("ChargeStatus", 0) 
-					var.Set("PowerSupplyConnected", 1)
-				elseif state.charging_state == "NoPower" then
-					var.Set("ChargeStatus", 0) 
-					var.Set("PowerSupplyConnected", 0)
-				elseif state.charging_state == "Disconnected" then
-					var.Set("ChargeStatus", 0) 
-					var.Set("PowerSupplyConnected", 0)
-				elseif state.charging_state == "Stopped" then
-					var.Set("ChargeStatus", 0) 
-					var.Set("PowerSupplyConnected", 1)
+					var.SetBoolean("ChargeStatus", true) 
+					var.SetBoolean("PowerSupplyConnected", true)
+				elseif state.charging_state == "Complete" or state.charging_state == "Stopped" then
+					var.SetBoolean("ChargeStatus", false) 
+					var.SetBoolean("PowerSupplyConnected", true)
+				elseif state.charging_state == "NoPower" or state.charging_state == "Disconnected" then
+					var.SetBoolean("ChargeStatus", false) 
+					var.SetBoolean("PowerSupplyConnected", false)
+				else
+					log.Warning("Car state; Unknown charging state : %s.", tostring(state.charging_state))
 				end
 			end
-			if state.charge_port_latch then var.Set("ChargePortLatched", state.charge_port_latch == "Engaged" and 1 or 0) end
-			var.Set("ChargePortDoorOpen", _bool_to_zero_one(state.charge_port_door_open))
-			var.Set("BatteryHeaterOn", _bool_to_zero_one(state.battery_heater_on))
-			var.Set("ChargeRate", state.charge_rate or 0)
-			var.Set("ChargePower", state.charger_power or 0)
-			var.Set("ChargeLimitSOC", state.charge_limit_soc or 90)
-			var.Set("ChargeStateTS", state.timestamp or 0)
+			var.SetBoolean("ChargePortLatched", (state.charge_port_latch == "Engaged"))
+			var.SetBoolean("ChargePortDoorOpen", state.charge_port_door_open or false)
+			var.SetBoolean("BatteryHeaterOn",state.battery_heater_on or false)
+			var.SetNumber("ChargeRate", state.charge_rate or 0)
+			var.SetNumber("ChargePower", state.charger_power or 0)
+			var.SetNumber("ChargeLimitSOC", state.charge_limit_soc or 0)
+			var.SetNumber("ChargeStateTS", state.timestamp)
 			return true
 		else
 			log.Warning("Update: No vehicle charge state found")
@@ -1458,23 +1504,25 @@ function TeslaCarModule()
 	-- Process the values returned for vehicle state
 	local function _update_vehicle_state(state)
 		if state then
-			var.Set("CarApiVersion", state.api_version or 0)
-			var.Set("CarFirmwareVersion", state.car_version or 0)
-			var.Set("CarCenterDisplayStatus", state.center_display_state or 0)
-			var.Set("UserPresent", _bool_to_zero_one(state.is_user_present))
-			if state.odometer then var.Set("Mileage",_convert_range_miles_to_units(state.odometer, "D")) end
-			var.Set("LockedStatus", _bool_to_zero_one(state.locked))
-			var.Set("FrunkStatus",state.ft)
-			var.Set("TrunkStatus",state.rt)
-			var.Set("DoorsStatus",json.encode({df = state.df, pf = state.pf, dr = state.dr, pr = state.pr}))
+			var.SetNumber("CarApiVersion", state.api_version or 0)
+			var.SetString("CarFirmwareVersion", state.car_version or "")
+			var.SetNumber("CarCenterDisplayStatus", state.center_display_state or 0)
+			var.SetBoolean("UserPresent", state.is_user_present or false)
+			var.SetNumber("Mileage",_convert_range_miles_to_units(state.odometer, "D"))
+			var.SetBoolean("LockedStatus", state.locked or false)
+			var.SetBoolean("FrunkStatus",state.ft or false)
+			var.SetBoolean("TrunkStatus",state.rt or false)
+			var.SetString("DoorsStatus",json.encode({df = state.df, pf = state.pf, dr = state.dr, pr = state.pr}))
 			if state.fd_window then
-				var.Set("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
+				var.SetString("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
+				var.SetBoolean("CarCanActuateWindows", true)
 			else
 				-- Seems model S does not report windows status, so assume closed.
-				var.Set("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
+				var.SetString("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
+			var.SetBoolean("CarCanActuateWindows", false)
 			end	
-			if var.GetNumber("CarHasSunRoof") ~= 0 and state.sun_roof_state then 
-				var.Set("SunroofStatus",state.sun_roof_state)
+			if var.GetBoolean("CarHasSunRoof") then 
+				var.SetBoolean("SunroofStatus",(state.sun_roof_percent_open ~= 0))
 			end	
 			-- Check for software update status
 			if state.software_update then
@@ -1493,12 +1541,8 @@ function TeslaCarModule()
 				elseif swu.status == "installing" then
 					swStat = 4
 				end
-				if swu.version and swu.version ~= "" then
-					var.Set("AvailableSoftwareVersion", swu.version)
-				else
-					var.Set("AvailableSoftwareVersion", "")
-				end
-				var.Set("SoftwareStatus", swStat)
+				var.SetString("AvailableSoftwareVersion", swu.version or "")
+				var.SetNumber("SoftwareStatus", swStat or 0)
 			end
 			return true
 		else
@@ -1511,17 +1555,22 @@ function TeslaCarModule()
 	local function CB_getVehicleDetails(cmd, res, cde, data, msg)
 		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
 		if cde == 200 then
-			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
+			var.SetBoolean("CarIsAwake", true)  -- Car must be awake by now.
 			if data.response then
 				local resp = data.response
 				if resp.id_s then
 					-- successful reply on command
 					-- update with latest vehicle
 					local icon = ICONS.IDLE
-					-- Process overall response values
-					var.Set("CarName", resp.display_name)
-					var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
-					var.Set("VIN", resp.vin)
+					-- Update car config data when Car name or VIN has changed
+					local cur_name = var.GetString("CarName")
+					local cur_vin = var.GetString("VIN")
+					if cur_name ~= resp.display_name or cur_vin ~= resp.vin then
+						var.SetString("CarName", resp.display_name)
+						var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
+						var.SetString("VIN", resp.vin)
+						_update_vehicle_config(resp.vehicle_config)
+					end	
 					-- Process specific category states
 					_update_gui_settings(resp.gui_settings)
 					_update_vehicle_state(resp.vehicle_state)
@@ -1550,13 +1599,13 @@ function TeslaCarModule()
 	local function CB_getServiceData(cmd, res, cde, data, msg)
 		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
 		if cde == 200 then
-			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
-			local service_status = 0
+			var.SetBoolean("CarIsAwake", true)  -- Car must be awake by now.
+			local service_status = false
 			local service_etc = ""
 			if data.response then
 				local resp = data.response
 				if resp.service_status then
-					service_status = (resp.service_status == "in_service" and 1) or 0
+					service_status = (resp.service_status == "in_service")
 					service_etc = resp.service_etc
 				else
 					-- Is normal response if not in service.
@@ -1564,8 +1613,8 @@ function TeslaCarModule()
 			else
 				log.Error("Get service data error. No response.")
 			end
-			var.Set("InServiceStatus", service_status)
-			var.Set("InServiceEtc", service_etc)
+			var.SetBoolean("InServiceStatus", service_status)
+			var.SetString("InServiceEtc", service_etc)
 		else
 			log.Error("Get service data error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Get service data error. Reason  "..msg)
@@ -1575,7 +1624,7 @@ function TeslaCarModule()
 	local function CB_wakeUp(cmd, res, cde, data, msg)
 		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
 		if cde == 200 then
-			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
+			var.SetBoolean("CarIsAwake", true)  -- Car must be awake by now.
 		else
 			log.Error("Wake up error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Wake up error. Reason  "..msg)
@@ -1586,7 +1635,7 @@ function TeslaCarModule()
 	local function CB_other(cmd, res, cde, data, msg)
 		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
 		if cde == 200 then
-			var.Set("CarIsAwake", 1)  -- Car must be awake by now.
+			var.SetBoolean("CarIsAwake", true)  -- Car must be awake by now.
 			-- Schedule poll to update car status details change because of command.
 			local delay = TCS_POLL_SUCCESS_DELAY
 			-- For sent temp setpoint we take longer delay and typically user sends multiple. Should give better GUI response.
@@ -1604,13 +1653,13 @@ function TeslaCarModule()
 	local function _update_car_status(force)
 		if not force then
 			-- Only poll if car is awake
-			if var.GetNumber("CarIsAwake") == 0 then
+			if not var.GetBoolean("CarIsAwake") then
 				var.Set("IconSet", ICONS.ASLEEP)
 				log.Debug("CarModule.UpdateCarStatus, skipping, Tesla is asleep.")
 				return false, 307, nil, "Car is asleep"
 			end
 		end
-
+		-- Get status update from car.
 		_set_status_message("Updating car status...")
 		TeslaCar.SendCommand("getVehicleDetails")
 		return TeslaCar.SendCommand("getServiceData")
@@ -1680,19 +1729,21 @@ function TeslaCarModule()
 		log.Debug("Scheduled Poll, enter")
 		luup.call_delay("_scheduled_poll", 60)
 		if readyToPoll then
-			local interval, awake = 0, 0
+			local interval, awake = 0, false
 			local force = false
+			-- For V1.10 handling, force car name update at startup 
+			if startup and var.Get("CarName") == "" then force = true end
 			local lastPollInt = os.time() - var.GetNumber("LastCarMessageTimestamp")
-			local prevAwake = var.GetNumber("CarIsAwake")
-			local swStat = var.GetNumber("SoftwareStatus")
-			local lckStat = var.GetNumber("LockedStatus")
-			local clmStat = var.GetNumber("ClimateStatus")
-			local mvStat = var.GetNumber("MovingStatus")
+			local prevAwake = var.GetBoolean("CarIsAwake")
+			local swStat = var.GetBoolean("SoftwareStatus")
+			local lckStat = var.GetBoolean("LockedStatus")
+			local clmStat = var.GetBoolean("ClimateStatus")
+			local mvStat = var.GetBoolean("MovingStatus")
 			local res, cde, data, msg = TeslaCar.GetVehicleAwakeStatus()
 			if res then
 				if data then
-					awake = 1
-					if prevAwake == 0 then
+					awake = true
+					if not prevAwake then
 						last_woke_up_time = os.time()
 						log.Debug("Monitor awake state, Car woke up")
 					else
@@ -1702,7 +1753,7 @@ function TeslaCarModule()
 					last_woke_up_time = 0
 					log.Debug("Monitor awake state, Car is asleep")
 				end	
-				var.Set("CarIsAwake", awake)
+				var.SetBoolean("CarIsAwake", awake)
 			else	
 				last_woke_up_time = 0
 				log.Error("Monitor awake state, failed #%d %s", cde, msg)
@@ -1716,25 +1767,30 @@ function TeslaCarModule()
 			local pol_t = {}
 			local last_wake_delta = os.time() - last_woke_up_time
 			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-			log.Debug("mvStat %d, awake %d, prevAwake %d, last woke int %d, swStat %d, lckStat %d, clmStat %d",mvStat,awake, prevAwake, last_wake_delta,swStat,lckStat,clmStat)
-			if mvStat == 1 then
+			log.Debug("mvStat %s, awake %s, prevAwake %s, last woke int %d, swStat %s, lckStat %s, clmStat %s",tostring(mvStat), tostring(awake), tostring(prevAwake), last_wake_delta, tostring(swStat), tostring(lckStat), tostring(clmStat))
+			if mvStat then
 				interval = pol_t[6]
 				force = true
-			elseif (awake == 1 and (last_wake_delta) < 200) or swStat ~= 0 or lckStat == 0 or clmStat == 1 then
+			elseif (awake and (last_wake_delta) < 200) or swStat or (not lckStat) or clmStat then
 				interval = pol_t[5]
 				force = true
-			elseif var.GetNumber("ChargeStatus") == 1 then
+			elseif var.GetBoolean("ChargeStatus") then
 				force = true
 				if var.GetNumber("RemainingChargeTime") > 1 then
 					interval = pol_t[3]
 				else
 					interval = pol_t[4]
 				end
-			elseif awake == 1 then
+			elseif awake then
 				interval = pol_t[2]
 			end
 			interval = interval * 60  -- Minutes to seconds
 			if interval == 0 then interval = 15*60 end
+			-- Force update to get get car config after install or update to V1.10
+			if startup and var.Get("CarName") == "" then 
+				interval = 10
+				force = true 
+			end
 			log.Debug("Next Scheduled Poll in %s seconds, last poll %s seconds ago, forced is %s.", interval, lastPollInt, tostring(force))
 			-- See if we passed poll interval.
 			if interval <= lastPollInt and readyToPoll then
@@ -1743,7 +1799,7 @@ function TeslaCarModule()
 			end
 			-- If we have software ready to install and auto install is on, send command to install
 			if swStat == 2 then
-				if var.GetNumber("AutoSoftwareInstall") == 1 then
+				if var.GetBoolean("AutoSoftwareInstall") then
 					_start_action("updateSoftware")
 				end
 			end
@@ -1756,6 +1812,7 @@ function TeslaCarModule()
 	local function _init()
 	
 		-- Create variables we will need from get-go
+		local prv_ver = var.Get("Version")
 		var.Set("Version", pD.Version)
 		var.Default("Email")
 		var.Default("Password") --store in attribute
@@ -1765,7 +1822,11 @@ function TeslaCarModule()
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)
 		var.Default("LocationHome",0)
-		var.Default("CarName")
+		-- Need to wipe car name for update to V1.10 config handling so fileds like car type are set.
+		local car_type = var.Default("CarType")
+		if car_type == "" and prv_ver ~= pD.Version then
+			var.Set("CarName", "") 
+		end
 		var.Default("VIN")
 		var.Default("ChargeStatus", 0)
 		var.Default("ClimateStatus", 0)
@@ -1787,7 +1848,65 @@ function TeslaCarModule()
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
 		var.Default("IconSet",ICONS.UNCONFIGURED)
-		var.Default("PluginHaveChildren")
+		var.Default("LastLogin", 0)
+		var.Default("CarIsAwake", 0)
+		var.Default("Gui24HourClock", 1)
+		var.Default("GuiChargeRateUnits", "km/hr")
+		var.Default("GuiDistanceUnits", "km/hr")
+		var.Default("GuiTempUnits", "C")
+		var.Default("GuiRangeDisplay")
+		var.Default("GuiSettingsTS", 0)
+		var.Default("CarApiVersion", 0)
+		var.Default("CarFirmwareVersion")
+		var.Default("CarCenterDisplayStatus", 0)
+		var.Default("UserPresent", 0)
+		var.Default("LockedStatus", 0)
+		var.Default("Latitude", 0)
+		var.Default("Longitude", 0)
+		var.Default("LocationTS", 0)
+		var.Default("DriveSpeed", 0)
+		var.Default("DrivePower", 0)
+		var.Default("DriveShiftState", 0)
+		var.Default("DriveStateTS", 0)
+		var.Default("BatteryHeaterStatus", 0)
+		var.Default("OutsideTemp", -99)
+		var.Default("InsideTemp", -99)
+		var.Default("MinInsideTemp", 15)
+		var.Default("MaxInsideTemp", 28)
+		var.Default("ClimateTargetTemp", 19)
+		var.Default("FrontDefrosterStatus", 0)
+		var.Default("RearDefrosterStatus", 0)
+		var.Default("PreconditioningStatus", 0)
+		var.Default("FanStatus", 0)
+		var.Default("SeatHeaterStatus", 0)
+		var.Default("MirrorHeaterStatus", 0)
+		var.Default("SteeringWeelHeaterStatus", 0)
+		var.Default("WiperBladesHeaterStatus", 0)
+		var.Default("SmartPreconditioning", 0)
+		var.Default("ClimateStateTS", 0)
+		var.Default("RemainingChargeTime", 0)
+		var.Default("BatteryRange", 0)
+		var.Default("BatteryLevel", 50)
+		var.Default("PowerPlugState", 0)
+		var.Default("ChargePortLatched", 0)
+		var.Default("ChargePortDoorOpen", 0)
+		var.Default("BatteryHeaterOn", 0)
+		var.Default("ChargeRate", 0)
+		var.Default("ChargePower", 0)
+		var.Default("ChargeLimitSOC", 90)
+		var.Default("DoorsMessage", "Unknown")
+		var.Default("WindowsMessage", "Unknown")
+		var.Default("FrunkMessage", "Unknown")
+		var.Default("TrunkMessage", "Unknown")
+		var.Default("LockedMessage", "Unknown")
+		var.Default("SoftwareMessage", "Unknown")
+		var.Default("AvailableSoftwareVersion")
+		var.Default("InServiceStatus", 0)
+		var.Default("CarHasRearSeatHeaters", 0)
+		var.Default("CarHasSunRoof", 0)
+		var.Default("CarHasMotorizedChargePort", 0)
+		var.Default("CarCanActuateTrunks", 0)
+		var.Default("CarCanActuateWindows", 0)
 		
 		_G._poll = _poll
 		_G._daily_poll = _daily_poll
@@ -2019,7 +2138,7 @@ end
 function TeslaCarModule_Initialize(lul_device)
 	pD.DEV = lul_device
 	pD.veraTemperatureScale = string.upper(luup.attr_get("TemperatureFormat",0)) or "C"
-	
+		
 	-- start Utility API's
 	log = logAPI()
 	var = varAPI()
