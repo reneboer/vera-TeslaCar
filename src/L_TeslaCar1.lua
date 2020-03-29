@@ -2,10 +2,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.10, 27 March 2020
+	V1.11, 29 March 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.11 Changes:
+		- Corrected state of several child devices.
 	V1.10 Changes:
 		- Improved car config handling.
 		- Corrected sun roof handling.
@@ -58,6 +60,7 @@ local ltn12 	= require("ltn12")
 local json 		= require("dkjson")
 local https     = require("ssl.https")
 local http		= require("socket.http")
+-- Modules definitions.
 local TeslaCar
 local CarModule
 local log
@@ -88,7 +91,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.10",
+	Version = "1.11",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
@@ -183,28 +186,28 @@ local childDeviceMap = {
 			},
 	["R"] = { typ = "R", df = "D_BinaryLight1", name = "Sunroof Closed", devID = nil, st_ac0 = "ventSunroof", st_ac1 = "closeSunroof",
 					sf = function(chDevID)
-						local status = var.Get("DoorsMessage") == "Closed" and 1 or 0
+						local status = var.GetBoolean("SunroofStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
 	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc", st_ac1 = "lockTrunc",
 					sf = function(chDevID)
-						local status = var.GetBoolean("TrunkStatus") and 1 or 0
+						local status = var.GetBoolean("TrunkStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
 	["F"] = { typ = "F", df = "D_BinaryLight1", name = "Frunk Closed", devID = nil, st_ac0 = "unlockFrunc",
 					sf = function(chDevID)
-						local status = var.GetNumber("FrunkStatus") == 0 and 1 or 0
+						local status = var.GetBoolean("FrunkStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
 	["P"] = { typ = "P", df = "D_BinaryLight1", name = "Charge Port Closed", devID = nil, st_ac1 = "closeChargePort", st_ac0 = "openChargePort",
 					sf = function(chDevID)
-						local status = var.GetNumber("ChargePortDoorOpen") == 0 and 1 or 0
+						local status = var.GetBoolean("ChargePortDoorOpen") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
@@ -1817,6 +1820,7 @@ function TeslaCarModule()
 		var.Default("Email")
 		var.Default("Password") --store in attribute
 		var.Default("LogLevel", pD.LogLevel)
+		var.Default("IconSet",ICONS.UNCONFIGURED)
 		var.Default("PollSettings", "1,20,15,5,1,5") --Daily Poll (1=Y,0=N), Interval for; Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
@@ -1833,8 +1837,14 @@ function TeslaCarModule()
 		var.Default("ChargeMessage")
 		var.Default("ClimateMessage")
 		var.Default("WindowMeltMessage")
+		var.Default("DoorsMessage", "Closed")
+		var.Default("WindowsMessage", "Closed")
+		var.Default("FrunkMessage", "Locked")
+		var.Default("TrunkMessage", "Locked")
+		var.Default("LockedMessage", "Locked")
+		var.Default("SoftwareMessage")
+		var.Default("LockedStatus", 1)
 		var.Default("DoorsStatus", 0)
-		var.Default("LocksStatus", 0)
 		var.Default("WindowsStatus", 0)
 		var.Default("SunroofStatus", 0)
 		var.Default("LightsStatus", 0)
@@ -1847,7 +1857,6 @@ function TeslaCarModule()
 		var.Default("StandardChargeLimit", 90)
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
-		var.Default("IconSet",ICONS.UNCONFIGURED)
 		var.Default("LastLogin", 0)
 		var.Default("CarIsAwake", 0)
 		var.Default("Gui24HourClock", 1)
@@ -1860,7 +1869,6 @@ function TeslaCarModule()
 		var.Default("CarFirmwareVersion")
 		var.Default("CarCenterDisplayStatus", 0)
 		var.Default("UserPresent", 0)
-		var.Default("LockedStatus", 0)
 		var.Default("Latitude", 0)
 		var.Default("Longitude", 0)
 		var.Default("LocationTS", 0)
@@ -1894,12 +1902,6 @@ function TeslaCarModule()
 		var.Default("ChargeRate", 0)
 		var.Default("ChargePower", 0)
 		var.Default("ChargeLimitSOC", 90)
-		var.Default("DoorsMessage", "Unknown")
-		var.Default("WindowsMessage", "Unknown")
-		var.Default("FrunkMessage", "Unknown")
-		var.Default("TrunkMessage", "Unknown")
-		var.Default("LockedMessage", "Unknown")
-		var.Default("SoftwareMessage", "Unknown")
 		var.Default("AvailableSoftwareVersion")
 		var.Default("InServiceStatus", 0)
 		var.Default("CarHasRearSeatHeaters", 0)
