@@ -1,8 +1,9 @@
 # vera-TeslaCar
-Vera plugin to control your Tesla with same commands as the mobile app.
+Vera plugin for Vera and openLuup to control your Tesla with same commands as the mobile app, like Charging control, open/close locks, doors, windows, etc.
 
-First release here. Is a usable basis for some automation intergration with openLuup or Vera.
+You can find the full instructins in the [Wiki](https://github.com/reneboer/vera-TeslaCar/wiki).
 
 Some to-do's
- * Create wiki
  * Smart preheat function.
+
+If you have more suggestions you can open an issue, or post on the [Vera Community pages](https://community.getvera.com/t/plugin-tesla-car-integration/212184).
