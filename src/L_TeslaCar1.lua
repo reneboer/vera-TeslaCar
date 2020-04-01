@@ -2,10 +2,13 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.11, 29 March 2020
+	V1.12, 1 April 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.12 Changes:
+		- Fix for new installs failing due to missing LogLevel variable.
+		- Fixed handling of Trunk/Frunk status. Open is not 1, but not equal 0.
 	V1.11 Changes:
 		- Corrected state of several child devices.
 	V1.10 Changes:
@@ -91,7 +94,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.11",
+	Version = "1.12",
 	DEV = nil,
 	Description = "Tesla Car",
 	onOpenLuup = false,
@@ -170,14 +173,20 @@ local childDeviceMap = {
 						end
 					end
 			},
-	["L"] = { typ = "L", df = "D_DoorLock1", sid = SIDS.DOOR, json = "D_DoorLock_NoPin.json", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors",
+	["L"] = { typ = "L", df = "D_DoorLock1", sid = SIDS.DOOR, json = "D_DoorLock_NoPin.json", name = "Doors Locked", devID = nil, st_ac0 = "unlockDoors", st_ac1 = "lockDoors", 
+					pVal = function()
+						return var.GetBoolean("LockedStatus") and 1 or 0
+					end,
 					sf = function(chDevID)
 						local status = var.GetBoolean("LockedStatus") and 1 or 0
 						var.Set("Status", status, SIDS.DOOR, chDevID)
 						var.Set("Target", status, SIDS.DOOR, chDevID)
 					end 
 			},
-	["W"] = { typ = "W", df = "D_BinaryLight1", name = "Windows Closed", devID = nil, st_ac0 = "ventWindows", st_ac1 = "closeWindows",
+	["W"] = { typ = "W", df = "D_BinaryLight1", name = "Windows Closed", devID = nil, st_ac0 = "ventWindows", st_ac1 = "closeWindows", 
+					pVal = function()
+						return var.Get("WindowsMessage") == "Closed" and 1 or 0
+					end,
 					sf = function(chDevID)
 						local status = var.Get("WindowsMessage") == "Closed" and 1 or 0
 						var.Set("Status", status, SIDS.SP, chDevID)
@@ -185,13 +194,19 @@ local childDeviceMap = {
 					end 
 			},
 	["R"] = { typ = "R", df = "D_BinaryLight1", name = "Sunroof Closed", devID = nil, st_ac0 = "ventSunroof", st_ac1 = "closeSunroof",
+					pVal = function()
+						return var.GetBoolean("SunroofStatus") and 0 or 1
+					end,
 					sf = function(chDevID)
 						local status = var.GetBoolean("SunroofStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
-	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc", st_ac1 = "lockTrunc",
+	["T"] = { typ = "T", df = "D_BinaryLight1", name = "Trunk Closed", devID = nil, st_ac0 = "unlockTrunc", st_ac1 = "lockTrunc", 
+					pVal = function()
+						return var.GetBoolean("TrunkStatus") and 0 or 1
+					end,
 					sf = function(chDevID)
 						local status = var.GetBoolean("TrunkStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
@@ -199,20 +214,29 @@ local childDeviceMap = {
 					end 
 			},
 	["F"] = { typ = "F", df = "D_BinaryLight1", name = "Frunk Closed", devID = nil, st_ac0 = "unlockFrunc",
+					pVal = function()
+						return var.GetBoolean("FrunkStatus") and 0 or 1
+					end,
 					sf = function(chDevID)
 						local status = var.GetBoolean("FrunkStatus") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
-	["P"] = { typ = "P", df = "D_BinaryLight1", name = "Charge Port Closed", devID = nil, st_ac1 = "closeChargePort", st_ac0 = "openChargePort",
+	["P"] = { typ = "P", df = "D_BinaryLight1", name = "Charge Port Closed", devID = nil, st_ac1 = "closeChargePort", st_ac0 = "openChargePort", 
+					pVal = function()
+						return var.GetBoolean("ChargePortDoorOpen") and 0 or 1
+					end,
 					sf = function(chDevID)
 						local status = var.GetBoolean("ChargePortDoorOpen") and 0 or 1
 						var.Set("Status", status, SIDS.SP, chDevID)
 						var.Set("Target", status, SIDS.SP, chDevID)
 					end 
 			},
-	["C"] = { typ = "C", df = "D_DimmableLight1", name = "Charging", devID = nil, st_ac0 = "stopCharge", st_ac1 = "startCharge",
+	["C"] = { typ = "C", df = "D_DimmableLight1", name = "Charging", devID = nil, st_ac0 = "stopCharge", st_ac1 = "startCharge", 
+					pVal = function()
+						return var.GetBoolean("ChargeStatus") and 1 or 0
+					end,
 					sll_af = function(chDevID, newLoadlevelTarget)
 						-- Set SOC level to new target, but must be between 50 and 100%
 						local soc = tonumber(newLoadlevelTarget)
@@ -236,8 +260,14 @@ local childDeviceMap = {
 						var.Set("BatteryLevel", var.Get("BatteryLevel", SIDS.HA), SIDS.HA, chDevID)
 					end
 			},
-	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "InsideTemp" },
-	["O"] = { typ = "O", df = "D_TemperatureSensor1", name = "Outside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", pVar = "OutsideTemp" }
+	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", 
+					pVal = function()
+						return var.GetNumber("InsideTemp")
+					end },
+	["O"] = { typ = "O", df = "D_TemperatureSensor1", name = "Outside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", 
+					pVal = function()
+						return var.GetNumber("OutsideTemp")
+					end }
 }
 local childIDMap = {}
 
@@ -269,7 +299,7 @@ local function varAPI()
 	-- Get variable value
 	local function _get(name, sid, device)
 		if type(name) ~= "string" then
-			luup.log("var.Set: variable name not a string.", 1)
+			luup.log("var.Get: variable name not a string.", 1)
 			return false
 		end	
 		local value, ts = luup.variable_get(sid or def_sid, name, tonumber(device or def_dev))
@@ -759,7 +789,7 @@ local function TeslaCarAPI()
 			if cde ~= 200 then
 				return false, cde, nil, stts
 			else
---log.Debug("HttpsRequest result %s", table.concat(result))		
+log.Debug("HttpsRequest result %s", table.concat(result))		
 				return true, cde, json.decode(table.concat(result)), "OK"
 			end
 		else
@@ -1244,8 +1274,8 @@ function TeslaCarModule()
 					chDev.sf(chDev.devID)
 				else
 					-- Get the value from parent variable
-					local val = tostring(var.Get(chDev.pVar))
-					log.Debug("parent variable %s, value %s, to update %s" ,chDev.pVar, val, chDev.var)
+					local val = tostring(chDev.pVal())
+					log.Debug("parent type %s, value %s, to update %s", chDevTyp, val, chDev.var)
 					-- Update the child variable
 					var.Set(chDev.var, val, chDev.sid, chDev.devID)
 				end
@@ -1510,11 +1540,11 @@ function TeslaCarModule()
 			var.SetNumber("CarApiVersion", state.api_version or 0)
 			var.SetString("CarFirmwareVersion", state.car_version or "")
 			var.SetNumber("CarCenterDisplayStatus", state.center_display_state or 0)
-			var.SetBoolean("UserPresent", state.is_user_present or false)
+			var.SetBoolean("UserPresent", (state.is_user_present ~= 0) or false)
 			var.SetNumber("Mileage",_convert_range_miles_to_units(state.odometer, "D"))
 			var.SetBoolean("LockedStatus", state.locked or false)
-			var.SetBoolean("FrunkStatus",state.ft or false)
-			var.SetBoolean("TrunkStatus",state.rt or false)
+			var.SetBoolean("FrunkStatus", (state.ft ~= 0) or false)
+			var.SetBoolean("TrunkStatus", (state.rt ~= 0) or false)
 			var.SetString("DoorsStatus",json.encode({df = state.df, pf = state.pf, dr = state.dr, pr = state.pr}))
 			if state.fd_window then
 				var.SetString("WindowsStatus", json.encode({df = state.fd_window, pf = state.fp_window, dr = state.rd_window, pr = state.rp_window}))
@@ -1522,7 +1552,7 @@ function TeslaCarModule()
 			else
 				-- Seems model S does not report windows status, so assume closed.
 				var.SetString("WindowsStatus", json.encode({df = 0, pf = 0, dr = 0, pr = 0}))
-			var.SetBoolean("CarCanActuateWindows", false)
+				var.SetBoolean("CarCanActuateWindows", false)
 			end	
 			if var.GetBoolean("CarHasSunRoof") then 
 				var.SetBoolean("SunroofStatus",(state.sun_roof_percent_open ~= 0))
@@ -1819,7 +1849,6 @@ function TeslaCarModule()
 		var.Set("Version", pD.Version)
 		var.Default("Email")
 		var.Default("Password") --store in attribute
-		var.Default("LogLevel", pD.LogLevel)
 		var.Default("IconSet",ICONS.UNCONFIGURED)
 		var.Default("PollSettings", "1,20,15,5,1,5") --Daily Poll (1=Y,0=N), Interval for; Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
@@ -1941,21 +1970,22 @@ end
 local function TeslaCar_Child_SetTarget(newTargetValue, deviceID)
 	log.Debug("SetTarget for deviceID %s, newTargetValue %s.", deviceID, newTargetValue)
 	if childIDMap[deviceID] then
+		local newTV = tonumber(newTargetValue)
 		local chDev = childDeviceMap[childIDMap[deviceID]]
 		log.Debug("SetTarget Found child device %d, for type %s, name %s.", deviceID, chDev.typ, chDev.name)
-		local curVal = var.Get(chDev.pVar)
-		if curVal ~= newTargetValue then
+		local curVal = chDev.pVal()
+		if curVal ~= newTV then
 			-- Find default car action for child SetTarget
 			local ac = chDev.st_ac
 			if not ac then
-				ac = chDev["st_ac"..newTargetValue]
+				ac = chDev["st_ac"..newTV]
 			end
 			if ac then
 				local res, cde, data, msg = CarModule.StartAction(ac)
 				if res then
 					local sid = chDev.sid or SIDS.SP
-					var.Set("Target", newTargetValue, sid, deviceID)
-					var.Set("Status", newTargetValue, sid, deviceID)
+					var.Set("Target", newTV, sid, deviceID)
+					var.Set("Status", newTV, sid, deviceID)
 				else
 					log.Error("SetTarget action %s failed. Error #%d, %s", ac, cde, msg)
 				end
@@ -1963,9 +1993,9 @@ local function TeslaCar_Child_SetTarget(newTargetValue, deviceID)
 				log.Info("No action defined for child device.")
 			end
 			-- Update the parent variable, next poll should fall back if failed.
---			var.Set(chDev.pVar, newTargetValue)
+--			var.Set(chDev.pVar, newTV)
 		else
-			log.Debug("SetTarget, value not changed (old %s, new %s). Ignoring action.", curVal, newTargetValue)
+			log.Debug("SetTarget, value not changed (old %s, new %s). Ignoring action.", curVal, newTV)
 		end
 	end
 end
@@ -2146,7 +2176,8 @@ function TeslaCarModule_Initialize(lul_device)
 	var = varAPI()
 	utils = utilsAPI()
 	var.Initialize(SIDS.MODULE, pD.DEV)
-	log.Initialize(pD.Description, var.GetNumber("LogLevel"), true)
+	local lv = var.Default("LogLevel", pD.LogLevel)
+	log.Initialize(pD.Description, tonumber(lv), true)
 	utils.Initialize()
 	
 	log.Info("device #%d is initializing!", tonumber(pD.DEV))
