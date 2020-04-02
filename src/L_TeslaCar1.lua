@@ -2,7 +2,7 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.12, 1 April 2020
+	V1.12, 2 April 2020
 	
 	A valid Tesla account registration is required.
 	
@@ -96,6 +96,7 @@ local SIDS = {
 local pD = {
 	Version = "1.12",
 	DEV = nil,
+	LogLevel = 1,
 	Description = "Tesla Car",
 	onOpenLuup = false,
 	veraTemperatureScale = "C",
@@ -437,6 +438,7 @@ local onOpenLuup = false
 local taskHandle = -1
 
 	local function _update(level)
+		if type(level) ~= "number" then level = def_level end
 		if level >= 100 then
 			def_file = true
 			def_debug = true
@@ -789,7 +791,7 @@ local function TeslaCarAPI()
 			if cde ~= 200 then
 				return false, cde, nil, stts
 			else
-log.Debug("HttpsRequest result %s", table.concat(result))		
+--log.Debug("HttpsRequest result %s", table.concat(result))		
 				return true, cde, json.decode(table.concat(result)), "OK"
 			end
 		else
@@ -2177,6 +2179,7 @@ function TeslaCarModule_Initialize(lul_device)
 	utils = utilsAPI()
 	var.Initialize(SIDS.MODULE, pD.DEV)
 	local lv = var.Default("LogLevel", pD.LogLevel)
+luup.log("log level set "..(lv or "nil").." type ".. type(lv))	
 	log.Initialize(pD.Description, tonumber(lv), true)
 	utils.Initialize()
 	
