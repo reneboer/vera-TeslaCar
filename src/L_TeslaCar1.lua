@@ -2,10 +2,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.12, 2 April 2020
+	V1.13, 14 April 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.13 Changes:
+		- Fix for auto software install.
 	V1.12 Changes:
 		- Fix for new installs failing due to missing LogLevel variable.
 		- Fixed handling of Trunk/Frunk status. Open is not 1, but not equal 0.
@@ -1770,7 +1772,7 @@ function TeslaCarModule()
 			if startup and var.Get("CarName") == "" then force = true end
 			local lastPollInt = os.time() - var.GetNumber("LastCarMessageTimestamp")
 			local prevAwake = var.GetBoolean("CarIsAwake")
-			local swStat = var.GetBoolean("SoftwareStatus")
+			local swStat = var.GetNumber("SoftwareStatus")
 			local lckStat = var.GetBoolean("LockedStatus")
 			local clmStat = var.GetBoolean("ClimateStatus")
 			local mvStat = var.GetBoolean("MovingStatus")
@@ -1806,7 +1808,7 @@ function TeslaCarModule()
 			if mvStat then
 				interval = pol_t[6]
 				force = true
-			elseif (awake and (last_wake_delta) < 200) or swStat or (not lckStat) or clmStat then
+			elseif (awake and (last_wake_delta) < 200) or swStat ~= 0 or (not lckStat) or clmStat then
 				interval = pol_t[5]
 				force = true
 			elseif var.GetBoolean("ChargeStatus") then
@@ -2179,7 +2181,6 @@ function TeslaCarModule_Initialize(lul_device)
 	utils = utilsAPI()
 	var.Initialize(SIDS.MODULE, pD.DEV)
 	local lv = var.Default("LogLevel", pD.LogLevel)
-luup.log("log level set "..(lv or "nil").." type ".. type(lv))	
 	log.Initialize(pD.Description, tonumber(lv), true)
 	utils.Initialize()
 	
