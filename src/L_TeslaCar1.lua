@@ -2,12 +2,14 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.13, 14 April 2020
+	V1.13, 16 April 2020
 	
 	A valid Tesla account registration is required.
 	
 	V1.13 Changes:
 		- Fix for auto software install.
+		- Units correction for ChargeRate if not mi/hr
+		- Added HTTP return code 400 to the list of retry reason codes.
 	V1.12 Changes:
 		- Fix for new installs failing due to missing LogLevel variable.
 		- Fixed handling of Trunk/Frunk status. Open is not 1, but not equal 0.
@@ -1066,7 +1068,7 @@ local function TeslaCarAPI()
 			-- Look at command on top of the queue
 			local pop_t = Queue.peak(SendQueue)
 			local res, cde, data, msg = _send_command(pop_t.cmd, pop_t.param)
-			if cde == 408 or cde == 502 or cde == 504 then
+			if cde == 400 or cde == 408 or cde == 502 or cde == 504 then
 				-- HTTP Error code indicates need to resend command
 				need_retry = true
 			else
@@ -1527,7 +1529,7 @@ function TeslaCarModule()
 			var.SetBoolean("ChargePortLatched", (state.charge_port_latch == "Engaged"))
 			var.SetBoolean("ChargePortDoorOpen", state.charge_port_door_open or false)
 			var.SetBoolean("BatteryHeaterOn",state.battery_heater_on or false)
-			var.SetNumber("ChargeRate", state.charge_rate or 0)
+			var.SetNumber("ChargeRate",  _convert_range_miles_to_units(state.charge_rate or 0, "C"))
 			var.SetNumber("ChargePower", state.charger_power or 0)
 			var.SetNumber("ChargeLimitSOC", state.charge_limit_soc or 0)
 			var.SetNumber("ChargeStateTS", state.timestamp)
