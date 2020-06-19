@@ -5,10 +5,10 @@
 //
 // V1.14 Changes:
 //		Typo correction
-//		Show mialeage in miles if applicable.
+//		Show mileage in miles if applicable.
 // V1.10 Changes:
 //		Added car type to status screen.
-//		Child device selection will only show availble remote control devices.
+//		Child device selection will only show available remote control devices.
 // V1.8 Changes:
 //		Added setting for Idle poll as standard 20 minutes may keep some cars awake.
 // V1.7 Changes:
@@ -156,7 +156,7 @@ var TeslaCar = (function (api) {
 				var srvs = varGet(deviceID, 'InServiceStatus');
 				var srve = varGet(deviceID, 'InServiceEtc');
 				var gdu = varGet(deviceID, 'GuiDistanceUnits');
-				if gdu === 'km/hr' {
+				if (gdu === 'km/hr') {
 					gdu = 'Km'
 				} else {
 					gdu = 'Miles'
