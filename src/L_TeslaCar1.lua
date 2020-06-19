@@ -2,10 +2,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.13, 16 April 2020
+	V1.14, 19 June 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.14 Changes:
+		- Fix for mileage vs km display.
 	V1.13 Changes:
 		- Fix for auto software install.
 		- Units correction for ChargeRate if not mi/hr
@@ -1191,7 +1193,7 @@ function TeslaCarModule()
 		else
 			units = var.Get("GuiDistanceUnits")
 		end
-		if units ~= "mi/hr" then
+		if units == "km/hr" then
 			return math.floor(miles / 0.621371)
 		else
 			return math.floor(miles)

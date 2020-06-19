@@ -1,8 +1,11 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.10 27 March 2020
+// V1.14 19 June 2020
 //
+// V1.14 Changes:
+//		Typo correction
+//		Show mialeage in miles if applicable.
 // V1.10 Changes:
 //		Added car type to status screen.
 //		Child device selection will only show availble remote control devices.
@@ -152,6 +155,12 @@ var TeslaCar = (function (api) {
 				var wins = varGet(deviceID, 'WindowsMessage');
 				var srvs = varGet(deviceID, 'InServiceStatus');
 				var srve = varGet(deviceID, 'InServiceEtc');
+				var gdu = varGet(deviceID, 'GuiDistanceUnits');
+				if gdu === 'km/hr' {
+					gdu = 'Km'
+				} else {
+					gdu = 'Miles'
+				}
 				var psm = 'Unknown';
 				if (psc === '1') {
 					psm = 'Charge power available';
@@ -170,7 +179,7 @@ var TeslaCar = (function (api) {
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>Awake status</td><td>'+(awk==='1'?'Awake':'Sleeping')+'</td></tr>'+
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
-					'<tr><td>Milage </td><td>'+mlg+' Km</td></tr>'+
+					'<tr><td>Mileage </td><td>'+mlg+' '+gdu+'</td></tr>'+
 					'<tr><td>Car location </td><td>'+(clh==='1'?'Home':'Away, Latitude : '+lat+', Longitude : '+lng)+'</td></tr>'+
 					'<tr><td>Power Connection Status </td><td>'+psm+'</td></tr>'+
 					'<tr><td>Climate Status </td><td>'+clms+'</td></tr>'+
@@ -309,10 +318,14 @@ var TeslaCar = (function (api) {
 
 
 	// Add a check box and label 
+// <div class="checkbox checkbox-inline">
+//	<input type="checkbox" id="condk15k6td-nocase" value="1" class="nocase"><label for="condk15k6td-nocase">Ignore&nbsp;case</label>
+// </div>
 	function htmlAddCheckBox(di, lb, di, chk) {
 		try {
 			var html = '<div class="clearfix labelInputContainer">'+
-					'<div class="pull-left">'+
+//					'<div class="pull-left checkbox checkbox-inline">'+
+					'<div class="checkbox checkbox-inline">'+
 						'<input class="customCheckbox" type="checkbox" id="'+moduleName+di+'Checkbox" '+((chk != -1) ? 'checked' : '')+'>'+
 						'<label class="labelForCustomCheckbox" for="'+moduleName+di+'Checkbox">'+lb+'</label>'+
 					'</div>'+
