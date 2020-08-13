@@ -2,7 +2,7 @@
 <!-- 
  S_TeslaCar1.xml Vera/openLuup "TeslaCar" Plug-in
  Written by Rene Boer
- V1.10 27 March 2020
+ V1.15 13 August 2020
 -->
 <scpd xmlns="urn:schemas-upnp-org:service-1-0">
 	<specVersion>
@@ -170,6 +170,11 @@
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
 		</stateVariable>
+		<stateVariable>
+			<name>SentryMode</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+		</stateVariable>
 	</serviceStateTable>
 	<actionList>
 		<action>
@@ -229,6 +234,14 @@
 		<action>
 			<name>stopCharge</name>
 			<relatedStateVariable>ChargeStatus</relatedStateVariable>
+		</action>
+		<action>
+			<name>startSentryMode</name>
+			<relatedStateVariable>SentryMode</relatedStateVariable>
+		</action>
+		<action>
+			<name>stopSentryMode</name>
+			<relatedStateVariable>SentryMode</relatedStateVariable>
 		</action>
 		<action>
 			<name>setChargeLimit</name>

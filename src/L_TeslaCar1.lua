@@ -2,10 +2,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.14, 19 June 2020
+	V1.15, 13 August 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.15 Changes:
+		- Added sentry mode control.
 	V1.14 Changes:
 		- Fix for mileage vs km display.
 	V1.13 Changes:
@@ -100,7 +102,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.12",
+	Version = "1.15",
 	DEV = nil,
 	LogLevel = 1,
 	Description = "Tesla Car",
@@ -267,6 +269,16 @@ local childDeviceMap = {
 						var.Set("BatteryLevel", var.Get("BatteryLevel", SIDS.HA), SIDS.HA, chDevID)
 					end
 			},
+	["S"] = { typ = "P", df = "D_BinaryLight1", name = "Sentry Mode", devID = nil, st_ac1 = "startSentryMode", st_ac0 = "stopSentryMode", 
+					pVal = function()
+						return var.GetBoolean("SentryMode") and 1 or 0
+					end,
+					sf = function(chDevID)
+						local status = var.GetBoolean("SentryMode") and 1 or 0
+						var.Set("Status", status, SIDS.SP, chDevID)
+						var.Set("Target", status, SIDS.SP, chDevID)
+					end 
+			},
 	["I"] = { typ = "I", df = "D_TemperatureSensor1", name = "Inside temp", devID = nil, sid = SIDS.TEMP, var = "CurrentTemperature", 
 					pVal = function()
 						return var.GetNumber("InsideTemp")
@@ -291,6 +303,7 @@ local ICONS = {
 	DOORS = 7,
 	WINDOWS = 8,
 	MOVING = 9,
+	SENTRY = 11,
 	UNCONFIGURED = -1
 }
 
@@ -717,6 +730,8 @@ local function TeslaCarAPI()
 		["stopCharge"]				= { method = "POST", url ="command/charge_stop" },
 		["startClimate"]			= { method = "POST", url ="command/auto_conditioning_start" },
 		["stopClimate"]				= { method = "POST", url ="command/auto_conditioning_stop" },
+		["startSentryMode"]			= { method = "POST", url ="command/set_sentry_mode", data = function(p) return {on=true} end },
+		["stopSentryMode"]			= { method = "POST", url ="command/set_sentry_mode", data = function(p) return {on=false} end },
 		["unlockDoors"]				= { method = "POST", url ="command/door_unlock" },
 		["lockDoors"]				= { method = "POST", url ="command/door_lock" },
 		["honkHorn"]				= { method = "POST", url ="command/honk_horn" },
@@ -1392,6 +1407,10 @@ function TeslaCarModule()
 		else	
 			-- var.Set("LockedMessage", "Locked")
 		end
+		if var.GetBoolean("SentryMode") then
+			var.Set("DisplayLine2", "Sentry Mode is active.", SIDS.ALTUI)
+			icon = ICONS.SENTRY
+		end
 		local swStat = var.GetNumber("SoftwareStatus")
 		if swStat == 0 then
 			var.Set("SoftwareMessage", "Current version : ".. var.Get("CarFirmwareVersion"))
@@ -1584,6 +1603,9 @@ function TeslaCarModule()
 				end
 				var.SetString("AvailableSoftwareVersion", swu.version or "")
 				var.SetNumber("SoftwareStatus", swStat or 0)
+			end
+			if state.sentry_mode_available then
+				var.SetBoolean("SentryMode", state.sentry_mode)
 			end
 			return true
 		else
@@ -1780,6 +1802,7 @@ function TeslaCarModule()
 			local lckStat = var.GetBoolean("LockedStatus")
 			local clmStat = var.GetBoolean("ClimateStatus")
 			local mvStat = var.GetBoolean("MovingStatus")
+			local smStat = var.GetBoolean("SentryMode")
 			local res, cde, data, msg = TeslaCar.GetVehicleAwakeStatus()
 			if res then
 				if data then
@@ -1808,11 +1831,11 @@ function TeslaCarModule()
 			local pol_t = {}
 			local last_wake_delta = os.time() - last_woke_up_time
 			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-			log.Debug("mvStat %s, awake %s, prevAwake %s, last woke int %d, swStat %s, lckStat %s, clmStat %s",tostring(mvStat), tostring(awake), tostring(prevAwake), last_wake_delta, tostring(swStat), tostring(lckStat), tostring(clmStat))
+			log.Debug("mvStat %s, awake %s, prevAwake %s, last woke int %d, swStat %s, lckStat %s, clmStat %s, smStat %s",tostring(mvStat), tostring(awake), tostring(prevAwake), last_wake_delta, tostring(swStat), tostring(lckStat), tostring(clmStat), tostring(smStat))
 			if mvStat then
 				interval = pol_t[6]
 				force = true
-			elseif (awake and (last_wake_delta) < 200) or swStat ~= 0 or (not lckStat) or clmStat then
+			elseif (awake and (last_wake_delta) < 200) or swStat ~= 0 or (not lckStat) or clmStat or smStat then
 				interval = pol_t[5]
 				force = true
 			elseif var.GetBoolean("ChargeStatus") then
@@ -1936,6 +1959,7 @@ function TeslaCarModule()
 		var.Default("ChargePortLatched", 0)
 		var.Default("ChargePortDoorOpen", 0)
 		var.Default("BatteryHeaterOn", 0)
+		var.Default("SentryMode", 0)
 		var.Default("ChargeRate", 0)
 		var.Default("ChargePower", 0)
 		var.Default("ChargeLimitSOC", 90)

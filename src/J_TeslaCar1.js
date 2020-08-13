@@ -1,8 +1,10 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.14 19 June 2020
+// V1.15 13 August 2020
 //
+// V1.15 Changes:
+//		Added sntry mode control.
 // V1.14 Changes:
 //		Typo correction
 //		Show mileage in miles if applicable.
@@ -24,7 +26,7 @@ var TeslaCar = (function (api) {
 
 	var MOD_SID = 'urn:rboer-com:serviceId:TeslaCar1';
 	var moduleName = 'TeslaCar';
-	var devList = [{'value':'C','label':'Charging'},{'value':'P','label':'Charge Port'},{'value':'H','label':'Climate'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'I','label':'Inside temperature'},{'value':'O','label':'Outside temperature'}];
+	var devList = [{'value':'C','label':'Charging'},{'value':'P','label':'Charge Port'},{'value':'H','label':'Climate'},{'value':'L','label':'Doors Locked'},{'value':'W','label':'Windows'},{'value':'R','label':'Sunroof'},{'value':'T','label':'Trunk'},{'value':'F','label':'Frunk'},{'value':'I','label':'Inside temperature'},{'value':'O','label':'Outside temperature'},{'value':'S','label':'Sentry Mode'}];
 
 	// Forward declaration.
     var myModule = {};
@@ -156,6 +158,7 @@ var TeslaCar = (function (api) {
 				var srvs = varGet(deviceID, 'InServiceStatus');
 				var srve = varGet(deviceID, 'InServiceEtc');
 				var gdu = varGet(deviceID, 'GuiDistanceUnits');
+				var smd = varGet(deviceID, 'SentryMode');
 				if (gdu === 'km/hr') {
 					gdu = 'Km'
 				} else {
@@ -187,6 +190,7 @@ var TeslaCar = (function (api) {
 					'<tr><td>Doors Status </td><td>'+drs+'</td></tr>'+
 					'<tr><td>Trunk/Frunk Status </td><td>'+trs+'/'+frs+'</td></tr>'+
 					'<tr><td>Windows Status </td><td>'+wins+'</td></tr>'+
+					'<tr><td>Sentry Mode </td><td>'+(smd==='1'?'Active':'Inactive')+'</td></tr>'+
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>In Service</td><td>'+(srvs==='0'?'Not in service':'In service, ETC : '+srve)+'</td></tr>'+
 					'</tbody></table></div></p>';

@@ -2,7 +2,7 @@
 <!-- 
 	I_TeslaCar1.xml; Vera/openLuup "TeslaCar" Plug-in 
 	Written by Rene Boer
-	V1.10 27 March 2020
+	V1.15 13 August 2020
 -->
 <implementation>
 	<settings>
@@ -222,6 +222,26 @@
 				return 4, nil
 			</job>
 			<jobname>stopClimate</jobname>
+		</action>
+		<action>
+			<name>startSentryMode</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				var.Set("SentryMode", 1)
+				CarModule.StartAction("startSentryMode")
+				return 4, nil
+			</job>
+			<jobname>startSentryMode</jobname>
+		</action>
+		<action>
+			<name>stopSentryMode</name>
+			<serviceId>urn:rboer-com:serviceId:TeslaCar1</serviceId>
+			<job>
+				var.Set("SentryMode", 0)
+				CarModule.StartAction("stopSentryMode")
+				return 4, nil
+			</job>
+			<jobname>stopSentryMode</jobname>
 		</action>
 		<action>
 			<name>setTemperature</name>

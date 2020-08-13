@@ -91,6 +91,14 @@
 			"value": 10
 		}]
 	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Sentry.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 11
+		}]
+	}, {
 		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Unconf.png",
 		"conditions": [{
 			"service": "urn:rboer-com:serviceId:TeslaCar1",
