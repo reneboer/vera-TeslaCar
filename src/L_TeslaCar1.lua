@@ -2,10 +2,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.15, 13 August 2020
+	V1.16, 17 August 2020
 	
 	A valid Tesla account registration is required.
 	
+	V1.16 Changes:
+		- Added icon to show communication is busy.
 	V1.15 Changes:
 		- Added sentry mode control.
 	V1.14 Changes:
@@ -102,7 +104,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.15",
+	Version = "1.16",
 	DEV = nil,
 	LogLevel = 1,
 	Description = "Tesla Car",
@@ -304,6 +306,7 @@ local ICONS = {
 	WINDOWS = 8,
 	MOVING = 9,
 	SENTRY = 11,
+	BUSY = 12,
 	UNCONFIGURED = -1
 }
 
@@ -1103,18 +1106,18 @@ local function TeslaCarAPI()
 				if command_retry < TCS_MAX_RETRIES then
 					command_retry = command_retry + 1
 					interval = TCS_RETRY_DELAY
-					log.Warning("TSC_send_queued: Doing retry #%d, command %s, cde #%d, msg: %s", command_retry, pop_t.cmd, cde, msg)
+					log.Warning("TSC_send_queued: Doing retry #%d, command %s, cde #%d, msg: %s", command_retry, pop_t.cmd, (cde or 0), (msg or "??"))
 				else
 					-- Max retries exeeded. Drop command.
-					log.Error("TSC_send_queued:Call back command %s failed after max retries #%d, msg: %s", pop_t.cmd, command_retry, msg)
+					log.Error("TSC_send_queued:Call back command %s failed after max retries #%d, msg: %s", pop_t.cmd, command_retry, (msg or "??"))
 					Queue.pop(SendQueue)
 					command_retry = 0
 					_send_callback(pop_t, false, 400, nil, "Failed to send command: "..pop_t.cmd)
 				end
 			else
 				-- No need to retry, send results to call back handler and remove command from queue.
-				_send_callback(pop_t, res, cde, data, msg)
 				Queue.pop(SendQueue)
+				_send_callback(pop_t, res, cde, data, msg)
 			end	
 			-- If we have more on Q, send next with an interval.
 			-- If call back did not remove the command from the queu, it will be resend.
@@ -1152,6 +1155,11 @@ local function TeslaCarAPI()
 		_G.TSC_wakeup_vehicle = TSC_wakeup_vehicle
 	end
 
+	-- See if more commands are queued
+	local function _get_commands_queued()
+		return (Queue.len(SendQueue) > 0)
+	end
+	
 	return {
 		Initialize = _init,
 		Authenticate = _authenticate,
@@ -1160,7 +1168,8 @@ local function TeslaCarAPI()
 		GetVehicle = _get_vehicle,
 		GetVehicleAwakeStatus = _get_vehicle_awake_status,
 		RegisterCallBack = _register_callback,
-		SendCommand = _send_command_async
+		SendCommand = _send_command_async,
+		GetCommandsQueued = _get_commands_queued
 	}
 end
 
@@ -1270,6 +1279,7 @@ function TeslaCarModule()
 	
 	local function _command(command)
 		log.Debug("Sending command : %s", command)
+		var.Set("IconSet", ICONS.BUSY)
 		local res, cde, data, msg = TeslaCar.SendCommand(command, param)
 		log.Log("Command result : Code ; %d, Response ; %s", cde, string.sub(msg,1,30))
 		log.Debug(msg)	
@@ -1424,8 +1434,7 @@ function TeslaCarModule()
 			var.Set("SoftwareMessage", "Installing version : ".. var.Get("AvailableSoftwareVersion"))
 		end
 		var.Set("LastCarMessageTimestamp", os.time())
-		var.Set("IconSet", icon or 0) -- Do not use nil on ALTUI!
-		return true
+		return (icon or 0)
 	end
 
 	-- Process the values returned for drive state
@@ -1617,6 +1626,7 @@ function TeslaCarModule()
 	-- Call backs for car request commands. Must be registered as handlers.
 	local function CB_getVehicleDetails(cmd, res, cde, data, msg)
 		log.Debug("Call back for command %s, message: %s", cmd.cmd, msg)
+		local icon = ICONS.IDLE
 		if cde == 200 then
 			var.SetBoolean("CarIsAwake", true)  -- Car must be awake by now.
 			if data.response then
@@ -1624,7 +1634,6 @@ function TeslaCarModule()
 				if resp.id_s then
 					-- successful reply on command
 					-- update with latest vehicle
-					local icon = ICONS.IDLE
 					-- Update car config data when Car name or VIN has changed
 					local cur_name = var.GetString("CarName")
 					local cur_vin = var.GetString("VIN")
@@ -1641,7 +1650,7 @@ function TeslaCarModule()
 					_update_climate_state(resp.climate_state)
 					_update_charge_state(resp.charge_state)
 					-- Update GUI messages and child devices
-					_update_message_texts()
+					icon = _update_message_texts()
 					_update_child_devices()
 					_set_status_message()
 				else
@@ -1657,6 +1666,11 @@ function TeslaCarModule()
 			log.Error("Get vehicle details error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Get vehicle details error. Reason  "..msg)
 		end
+		if TeslaCar.GetCommandsQueued() then
+			-- More commands in queue, so keep busy status.
+			icon = ICONS.BUSY
+		end
+		var.Set("IconSet", icon)
 	end
 	
 	local function CB_getServiceData(cmd, res, cde, data, msg)
@@ -1681,6 +1695,12 @@ function TeslaCarModule()
 		else
 			log.Error("Get service data error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Get service data error. Reason  "..msg)
+		end
+		if TeslaCar.GetCommandsQueued() then
+			-- More commands in queue, so keep busy status.
+			var.Set("IconSet", ICONS.BUSY)
+		else
+			var.Set("IconSet", ICONS.IDLE)
 		end
 	end
 
@@ -1710,6 +1730,12 @@ function TeslaCarModule()
 			log.Error("Command send error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Command send error. Reason  "..msg)
 		end
+		if TeslaCar.GetCommandsQueued() then
+			-- More commands in queue, so keep busy status.
+			var.Set("IconSet", ICONS.BUSY)
+		else
+			var.Set("IconSet", ICONS.IDLE)
+		end
 	end
 
 	-- Request the latest status from the car
@@ -1724,14 +1750,16 @@ function TeslaCarModule()
 		end
 		-- Get status update from car.
 		_set_status_message("Updating car status...")
-		TeslaCar.SendCommand("getVehicleDetails")
-		return TeslaCar.SendCommand("getServiceData")
+		var.Set("IconSet", ICONS.BUSY)
+		TeslaCar.SendCommand("getServiceData")
+		return TeslaCar.SendCommand("getVehicleDetails")
 	end	
 
 	-- Send the requested command
 	local function _start_action(request, param)
 		log.Debug("Start Action enter for command %s, %s.", request, (param or ""))
-		_set_status_message("Sending command "..request)
+		_set_status_message("Sending "..request)
+		var.Set("IconSet", ICONS.BUSY)
 		return TeslaCar.SendCommand(request, param)
 	end	
 	
@@ -1816,6 +1844,7 @@ function TeslaCarModule()
 				else
 					last_woke_up_time = 0
 					log.Debug("Monitor awake state, Car is asleep")
+					var.SetNumber("IconSet", ICONS.ASLEEP)
 				end	
 				var.SetBoolean("CarIsAwake", awake)
 			else	

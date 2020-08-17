@@ -99,6 +99,14 @@
 			"value": 11
 		}]
 	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Busy.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 12
+		}]
+	}, {
 		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Unconf.png",
 		"conditions": [{
 			"service": "urn:rboer-com:serviceId:TeslaCar1",
@@ -325,7 +333,7 @@
 					"left": 1,
 					"text_align": "left",
 					"Label": {
-						"text": "Auto Software Update" 
+						"text": "Sentry Mode" 
 					},
 					"Display": {
 						"Top": 153,
@@ -340,6 +348,67 @@
 					"left": 2,
 					"Display": {
 						"Top": 145,
+						"Left": 130
+					},
+					"states": [
+						{
+							"Label": {
+								"text": "On"
+							},
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "SentryMode",
+								"Value": "1"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "startSentryMode",
+								"Parameters": [ ]
+							},
+							"ControlCode": "sentrymode_on"
+						},
+						{
+							"Label": {
+								"text": "Off"
+							},
+							"Display": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Variable": "SentryMode",
+								"Value": "0"
+							},
+							"Command": {
+								"Service": "urn:rboer-com:serviceId:TeslaCar1",
+								"Action": "stopSentryMode",
+								"Parameters": [ ]
+							},
+							"ControlCode": "sentrymode_off"
+                        }
+					]	
+                },
+				{
+					"ControlType": "line_break"
+				},
+				{
+					"ControlType": "label",
+					"top": 1,
+					"left": 1,
+					"text_align": "left",
+					"Label": {
+						"text": "Auto Software Update" 
+					},
+					"Display": {
+						"Top": 203,
+						"Left": 1,
+						"Width": 100,
+						"Height": 20 
+					} 
+				},
+                {
+                    "ControlType": "multi_state_button",
+					"top": 1,
+					"left": 2,
+					"Display": {
+						"Top": 195,
 						"Left": 130
 					},
 					"states": [
@@ -395,7 +464,7 @@
 					"Display": {
 						"Service": "urn:rboer-com:serviceId:TeslaCar1",
 						"Variable": "SoftwareMessage",
-						"Top": 153,
+						"Top": 203,
 						"Left": 230,
 						"Width": 55,
 						"Height": 20 
@@ -413,7 +482,7 @@
 						"text": "Refresh car status" 
 					},
 					"Display": {
-						"Top": 203,
+						"Top": 253,
 						"Left": 1,
 						"Width": 100,
 						"Height": 20 
@@ -428,7 +497,7 @@
                         "text": "Refresh"
                     },
                     "Display": {
-                        "Top": 203,
+                        "Top": 253,
                         "Left": 130,
 						"Width": 100,
 						"Height": 35 
