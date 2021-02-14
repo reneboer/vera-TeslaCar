@@ -2,10 +2,14 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V1.16, 17 August 2020
+	V2.00, 1 February 2021
 	
 	A valid Tesla account registration is required.
 	
+	V2.00 Changes:
+		- Updated Authentication for new OAuth2 used by Tesla.
+		- Tokens are stored so no reauthentication is needed at startup.
+		- A reauthentication with UID/PWD can be forced if needed.
 	V1.16 Changes:
 		- Added icon to show communication is busy.
 	V1.15 Changes:
@@ -73,6 +77,9 @@ local ltn12 	= require("ltn12")
 local json 		= require("dkjson")
 local https     = require("ssl.https")
 local http		= require("socket.http")
+local mime 		= require("mime")
+local bit		= require("bit")
+
 -- Modules definitions.
 local TeslaCar
 local CarModule
@@ -104,7 +111,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "1.16",
+	Version = "2.00",
 	DEV = nil,
 	LogLevel = 1,
 	Description = "Tesla Car",
@@ -360,6 +367,22 @@ local function varAPI()
 		return (value == "1")
 	end
 
+	-- Get variable value as JSON type. Return decoded result
+	local function _get_json(name, sid, device)
+		local value = _get(name, sid, device)
+		if value == "" then
+			luup.log("var.GetJson: empty data value for variable "..(name or "unknown"), 2)
+			return {}
+		end
+		local res, msg = json.decode(value)
+		if res then 
+			return res
+		else
+			luup.log("var.GetJson: failed to decode json ("..(value or "")..") for variable "..(name or "unknown"), 2)
+			return {}
+		end
+	end
+
 	-- Set variable value
 	local function _set(name, value, sid, device)
 		if type(name) ~= "string" then
@@ -409,6 +432,16 @@ local function varAPI()
 		return false
 	end
 
+	-- Set json variable value. If value is not array, do not set.
+	local function _set_json(name, value, sid, device)
+		if type(value) ~= "table" then
+			luup.log("var.SetJson: wrong data type ("..type(value)..") for variable "..(name or "unknown"), 2)
+			return false
+		end
+		local jsd = json.encode(value) or "{}"
+		return _set(name, jsd, sid, device)
+	end
+
 	-- create missing variable with default value or return existing
 	local function _default(name, default, sid, device)
 		local sid = sid or def_sid
@@ -438,10 +471,12 @@ local function varAPI()
 		SetString = _set_string,
 		SetNumber = _set_num,
 		SetBoolean = _set_bool,
+		SetJson = _set_json,
 		Get = _get,
 		GetString = _get_string,
 		GetNumber = _get_num,
 		GetBoolean = _get_bool,
+		GetJson = _get_json,
 		Default = _default,
 		GetAttribute = _getattr,
 		SetAttribute = _setattr,
@@ -574,16 +609,26 @@ local taskHandle = -1
 end 
 
 -- API to handle some Util functions
+-- API to handle some Util functions
 local function utilsAPI()
-local flr = math.floor
-local cl = math.ceil
 local _UI5 = 5
 local _UI6 = 6
 local _UI7 = 7
 local _UI8 = 8
 local _OpenLuup = 99
+local charTable = {}
+
+local  table_insert, table_concat, format, byte, char, string_rep, sub, gsub, ceil, floor =
+   table.insert, table.concat, string.format, string.byte, string.char, string.rep, string.sub, string.gsub, math.ceil, math.floor
 
 	local function _init()
+		local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+		-- for urandom
+		for c in chars:gmatch"." do
+			table_insert(charTable, c)
+		end
+
 	end	
 
 	-- See what system we are running on, some Vera or OpenLuup
@@ -597,7 +642,7 @@ local _OpenLuup = 99
 	end
 	
 	local function _getmemoryused()
-		return flr(collectgarbage "count")         -- app's own memory usage in kB
+		return floor(collectgarbage "count")         -- app's own memory usage in kB
 	end
 	
 	local function _setluupfailure(status,devID)
@@ -618,15 +663,15 @@ local _OpenLuup = 99
 	local function _round(value, decimals)
 		local power = 10^decimals
 		return (value >= 0) and
-				(flr(value * power) / power) or
-				(cl(value * power) / power)
+				(floor(value * power) / power) or
+				(ceil(value * power) / power)
 	end
 
 	local function _split(source, deli)
 		local del = deli or ","
 		local elements = {}
 		local pattern = '([^'..del..']+)'
-		string.gsub(source, pattern, function(value) elements[#elements + 1] = value end)
+		gsub(source, pattern, function(value) elements[#elements + 1] = value end)
 		return elements
 	end
 	
@@ -640,7 +685,42 @@ local _OpenLuup = 99
 
 	local function _join(tab, deli)
 		local del = deli or ","
-		return table.concat(tab, del)
+		return table_concat(tab, del)
+	end
+
+	-- Generate a (semi) random string
+	local function _urandom(length)
+		local random = math.random
+		local randomString = {}
+
+		for i = 1, length do
+			randomString[i] = charTable[random(1, #charTable)]
+		end
+		return table_concat(randomString)
+	end
+	
+	-- remove training chars
+	local function _rstrip(str, chr)
+		if sub(str,-1) == chr then 
+			return _rstrip(sub(str, 1, -2),chr)
+		else
+			return str
+		end
+	end
+
+	-- URL safe encode
+	local function _uuencode(url)
+		if not url then return nil end
+		local char_to_hex = function(c)
+			if c ~= "." and c ~= "_" and c ~= "-" then
+				return format("%%%02X", c:byte());
+			else
+				return c;
+			end
+		end
+		url = url:gsub("([^%w ])", char_to_hex)
+		url = url:gsub(" ", "+")
+		return url
 	end
 
 	return {
@@ -658,7 +738,10 @@ local _OpenLuup = 99
 		IsUI6 = _UI6,
 		IsUI7 = _UI7,
 		IsUI8 = _UI8,
-		IsOpenLuup = _OpenLuup
+		IsOpenLuup = _OpenLuup,
+		urandom = _urandom,
+		rstrip = _rstrip,
+		uuencode = _uuencode
 	}
 end 
 
@@ -717,6 +800,9 @@ Adviced polling:
 	* For other activities like heating, poll every five minutes.
 ]]
 local function TeslaCarAPI()
+local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, match, gmatch, len, ceil, floor, math_min, math_max =
+   table.unpack or unpack, table.insert, table.concat, string.byte, string.char, string.rep, string.sub, string.gsub, string.match, string.gmatch, string.len, math.ceil, math.floor, math.min, math.max
+
 	-- Map commands to details
 	local commands = {
 		["listCars"]				= { method = "GET" },
@@ -756,29 +842,35 @@ local function TeslaCarAPI()
 	}
 
 	-- Tesla API location details
-	local base_url = "https://owner-api.teslamotors.com/"
+	local base_host = "owner-api.teslamotors.com"
+	local auth_host = "auth.tesla.com"
 	local vehicle_url = nil
-	local api_url = "api/1/vehicles"
+	local api_url = "/api/1/vehicles"
+	local cookie_jar = {}
 
 	-- Authentication data
 	local auth_data = {
-		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
+--		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
 		["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
 		["email"] = nil,
 		["password"] = nil,
 		["vin"] = nil,
-		["token"] = nil,
+		["access_token"] = nil,
 		["refresh_token"] = nil,
 		["expires_in"] = nil,
 		["created_at"] = nil,
 		["expires_at"] = nil
 	}
 
-	local request_header = {
-		["x-tesla-user-agent"] = "VeraTeslaCarApp/1.0",
-		["user-agent"] = "Mozilla/5.0 (Linux; Android 8.1.0; Pixel XL Build/OPM4.171019.021.D1; wv) Chrome/68.0.3440.91",
-		["accept"] = "application/json",
-		["content-type"] = "application/json; charset=UTF-8"
+	-- Header values to add to each HTTP request
+	local base_request_headers = {
+		["user-agent"] = "VeraTeslaCarApp/2.0",
+		["accept"] = "*/*",
+		["accept-encoding"] = "deflate",
+		["connection"] = "keep-alive",
+		["content-type"] = "application/json",
+		["x-tesla-user-agent"] = "VeraTeslaCarApp/2.0",
+		["x-requested-with"] = "com.teslamotors.tesla"	
 	}
 
 	-- Vehicle details
@@ -788,73 +880,308 @@ local function TeslaCarAPI()
 	local SendQueue = Queue.new()	-- Queue to hold commands to be handled.
 	local callBacks = {}			-- To register command specific call back by client.
 
+	local function url_encode(p_data)
+		local result = {};
+		if p_data[1] then -- Array of ordered { name, value }
+			for _, field in ipairs(p_data) do
+				table_insert(result, utils.uuencode(field[1]).."="..utils.uuencode(field[2]));
+			end
+		else -- Unordered map of name -> value
+			for name, value in pairs(p_data) do
+				table_insert(result, utils.uuencode(name).."="..utils.uuencode(value));
+			end
+		end
+		return table_concat(result, "&");
+	end
+
+	-- Get all parameters from the URL, or just the one specified
+	local function extract_url_parameters(url,key)
+		local function urldecode(s)
+			local sc = string.char
+			s = s:gsub('+', ' '):gsub('%%(%x%x)', function(h)
+				return sc(tonumber(h, 16))
+				end)
+		return s
+		end
+	
+		local ans = {}
+		for k,v in url:gmatch('([^&=?]-)=([^&=?]+)' ) do
+			if key then
+				if k == key then
+					return urldecode(v)
+				end
+			else
+				ans[ k ] = urldecode(v)
+			end
+		end
+		if key then
+			return ''
+		else	
+			return ans
+		end	
+	end
+
+	-- We assume all host cookies apply to all urls (Path=/)
+	-- Parse cookie-set and store cookie
+	local function cookies_parse(host, cookies)
+		if not cookie_jar[host] then cookie_jar[host] = {} end
+		local cookie_tab = cookie_jar[host]
+		local cookies = gsub(cookies, "Expires=(.-); ", "")
+		for cookie in gmatch(cookies..',','(.-),') do
+			local key,val,pth = match(cookie..";", '(.-)=(.-); [P|p]ath=(.-);')
+			if not key then key,val,pth = match(cookie..";", '(.-)=(.-);[P|p]ath=(.-);') end
+			if key then
+				key = gsub(key," ","")
+--				if pth == "/" then pth = "" end
+				cookie_tab[key] = val
+			end
+		end
+	end
+
+	-- Build a cookie string for the given cookie keys/paths
+	local function cookies_build(host)
+		if not host then return nil end
+		if not cookie_jar[host] then return nil end
+
+		local cookie_tab = cookie_jar[host]
+		local cookies = nil
+		for kv, kp in pairs(cookie_tab) do
+			if cookies then
+				cookies = cookies.."; "..kv.."="..kp
+			else
+				cookies = kv.."="..kp
+			end	
+		end
+		return cookies
+	end
+
+	-- Build a cookie string for the given cookie keys/paths
+	local function cookies_clear(host)
+		if not host then return nil end
+		cookie_jar[host] = {}
+	end
+
+	-- Return a copy of the header with the additional values.
+	local function copy_header(source_hdr, base)
+		local hdr = base or {}
+		for key, val in pairs(source_hdr) do
+			hdr[key] = val
+		end
+		return hdr
+	end
+
 	-- HTTPs request wrapper with Tesla API required attributes
-	local function _tesla_https_request(mthd, strURL, PostData)
+	local function _tesla_https_request(params)
 		local result = {}
 		local request_body = nil
-		local headers = request_header
---log.Debug("HttpsRequest method %s, url %s", mthd, strURL)		
-		if PostData then
-			request_body=json.encode(PostData)
-			headers["content-length"] = string.len(request_body)
---log.Debug("HttpsRequest 2 body: %s",request_body)		
+		local host = params.host or base_host
+		local url = "https://"..host..params.url
+		
+		-- Build heders from base and request.
+		local headers = copy_header(base_request_headers)
+		if params.headers then headers = copy_header(params.headers, headers) end
+		headers["host"] = params.host
+		
+		-- Add any cookies for the host.
+		headers['cookie'] = cookies_build(host) 
+		if params.params then
+			-- Add parameters to URL
+			url = url .. "?" .. url_encode(params.params)
+		end
+		if params.data then
+			-- Build request body
+			if headers["content-type"] == "application/x-www-form-urlencoded" then
+				request_body = url_encode(params.data)
+			else
+				-- Default is json
+				request_body = json.encode(params.data)
+			end
+			headers["content-length"] = len(request_body)
 		else	
---log.Debug("HttpsRequest 2, no body ")		
-			headers["content-length"] = "0"
+			headers["content-length"] = 0
 		end 
+--log.Debug("HttpsRequest method %s, url %s", params.method, url)		
 		http.TIMEOUT = TCS_HTTP_TIMEOUT
 		local bdy,cde,hdrs,stts = https.request{
-			url = strURL, 
-			method = mthd,
+			url = url, 
+			method = params.method,
+-- Have to force protocol on Vera.
+			protocol = "tlsv1_2",
+			options =  {"all", "no_sslv2", "no_sslv3"},
+            verify = "none",
+-- vera must end			
 			sink = ltn12.sink.table(result),
 			source = ltn12.source.string(request_body),
+			redirect = false,
 			headers = headers
 		}
---log.Debug("HttpsRequest 3 %s", cde)
+--log.Debug("HttpsRequest 3 %s, %s %s", tostring(bdy), tostring(cde), tostring(stts))
 		if bdy == 1 then
-			if cde ~= 200 then
-				return false, cde, nil, stts
+			-- Capture any set-cookie header for next request
+			for key, val in pairs(hdrs) do
+				if key == "set-cookie" then
+--log.Debug("Received header %s %s",key,val)
+					cookies_parse(host, val)
+				end
+			end
+			if cde == 200 then
+				if hdrs["content-type"] == "application/json" or hdrs["content-type"] == "application/json; charset=utf-8" then
+					return true, cde, json.decode(table_concat(result)), "OK", hdrs
+				else
+					return true, cde, table_concat(result), "OK", hdrs
+				end
 			else
---log.Debug("HttpsRequest result %s", table.concat(result))		
-				return true, cde, json.decode(table.concat(result)), "OK"
+				return true, cde, table_concat(result), stts, hdrs
 			end
 		else
 			-- Bad request
-			return false, 400, nil, "HTTP/1.1 400 BAD REQUEST"
+			return false, 400, nil, "HTTP/1.1 400 BAD REQUEST !!", nil
 		end
 	end	
-
-	-- ask for new token, if we have a refresh token, try refresh first.
-	local function _authenticate (force)
-		local cmd_data = {
-				client_id = auth_data.client_id,
-				client_secret = auth_data.client_secret
-			}
-		if force or (not auth_data.refresh_token) then
-			cmd_data.grant_type = "password"
-			cmd_data.email = auth_data.email
-			cmd_data.password = auth_data.password
-		else
-			cmd_data.grant_type	= "refresh_token"
-			cmd_data.refresh_token = auth_data.refresh_token
+	
+	-- Store and retrieve credentials from perm storage if available
+	local function _retrieve_credentials()
+		if auth_data.token_storage_handler then
+			local cred = auth_data.token_storage_handler("GET")
+			if cred then
+				auth_data.access_token = cred.access_token
+				auth_data.refresh_token = cred.refresh_token
+				auth_data.token_type = cred.token_type
+				auth_data.expires_at = cred.expires_at
+			end
 		end
-		local res, cde, data, msg = _tesla_https_request("POST", base_url .. "oauth/token", cmd_data)
-		if res then
-			-- Succeed, set token details
-			auth_data.token = data.access_token
-			auth_data.refresh_token = data.refresh_token
-			auth_data.token_type = data.token_type
-			auth_data.expires_in = data.expires_in
-			auth_data.created_at = data.created_at		
-			auth_data.expires_at = data.created_at + data.expires_in - 3600
-			request_header["authorization"] = data.token_type.." "..data.access_token
-			msg = "OK"
-		else
-			-- Fail, clear token data
-			auth_data.token = nil
+	end
+	local function _store_credentials()
+		if auth_data.token_storage_handler then
+			auth_data.token_storage_handler("SET", auth_data)
+		end
+	end
+
+	local function  _authenticate (force)
+		if (not force) and auth_data.access_token and auth_data.expires_at and auth_data.expires_at > os.time() then
+			log.Debug("Tokens valid. No need to authenticate.")
+			return true, 200, nil, "OK"
+		end
+		-- Need to logon to obtain tokens
+		cookies_clear(auth_host)
+		-- See if we have a refresh token, so use that.
+		if (not force) and auth_data.refresh_token then
+			-- We have a refresh token, so use that.
+			log.Debug("Refesh Token availble to reauthenticate.")
+			data = {
+				grant_type = "refresh_token",
+				client_id = "ownerapi",
+				refresh_token = auth_data.refresh_token,
+				scope = "openid email offline_access"
+			}
+			-- Clear current values
+			auth_data.access_token = nil
 			auth_data.refresh_token = nil
 			auth_data.expires_at = os.time() - 3600
+			local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
+			if cde ~= 200 then return false, cde, nil, 'Incorrect response code ' .. cde .. ' expect 200' end
+			-- Succeed, set token details
+			auth_data.refresh_token = body.refresh_token
+			auth_data.access_token = body.access_token
+			auth_data.token_type = body.token_type
+		else
+			-- Full authenticate is needed.
+			log.Debug("Full authenication user UID/PWD required.")
+			-- Clear current values
+			auth_data.access_token = nil
+			auth_data.refresh_token = nil
+			auth_data.expires_at = os.time() - 3600
+			
+			-- Generate new logon request codes. Works with any challange code for now.
+			local code_verifier = utils.urandom(86)
+--			local code_challenge = utils.rstrip(mime.b64(utils.sha256(code_verifier)), "=")
+			local code_challenge = utils.urandom(86)
+			local state = utils.urandom(12)
+		
+			-- Get landing page
+			local params = {
+				{"client_id", "ownerapi"},
+				{"code_challenge", code_challenge},
+				{"code_challenge_method", "S256"},
+				{"redirect_uri", "https://" .. auth_host .. "/void/callback"},
+				{"response_type", "code"},
+				{"scope", "openid email offline_access"},
+				{"state", state}
+			}
+			local res, cde, body, msg, hdrs = _tesla_https_request({method="GET", host=auth_host, url="/oauth2/v3/authorize", params=params})
+			-- Request does not always return the page we need. p3p header looks like good indicator.
+			if cde ~= 200 or hdrs["p3p"] then return false, cde, nil, msg end
+			-- Collect known hidden input fields from form.
+			local inputs = {}
+			local form = match(body,'<form method="post" id="form" class="sso%-form sign%-in%-form">(.+)</form>')
+			for str in gmatch(form,'<input type="hidden" name=(.-) />') do
+				local key, val = match(str, '"(.-)" value="(.+)"')
+				if key and val then
+					if val:sub(1,1) == '"' then val = "" end
+					inputs[key] = val
+				end	
+			end
+			log.Debug('_csrf from landing page : %s', inputs._csrf)
+			log.Debug('transaction_id from landing page : %s', inputs.transaction_id)
+
+			-- Do logon
+			local headers = {
+				["content-type"] = "application/x-www-form-urlencoded"
+			}
+			local data = {
+				{"identity", auth_data.email},
+				{"credential", auth_data.password}
+			}
+			-- Add hidden form inputs from landing page
+			for key, val in pairs(inputs) do
+				table_insert(data, {key, val})
+			end
+			local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/authorize", data=data, params=params, headers=headers})
+			if cde == 200 then
+				-- See if Multi Factor is on. Not supporting for now.
+				if match(body, "/mfa/verify") then
+					return false, cde, nil, "Multi Factor Authentication is not supported."
+				else
+					return false, cde, nil, "Retry"
+				end
+			elseif cde == 302 then 
+				local loc_code = extract_url_parameters(hdrs["location"],"code")
+				if not loc_code then return false, cde, nil, 'No loc_code found' end
+				log.Debug("location code : %s" , loc_code)			
+
+				-- Get OAuth tokens
+				data = {
+					grant_type = "authorization_code",
+					client_id = "ownerapi",
+					code_verifier = code_verifier,
+					code = loc_code,
+					redirect_uri = "https://auth.tesla.com/void/callback"
+				}
+				local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
+				if cde ~= 200 then return false, cde, nil, msg end
+				-- Succeed, set token details
+				auth_data.refresh_token = body.refresh_token
+				auth_data.access_token = body.access_token
+				auth_data.token_type = body.token_type
+			else
+				return false, cde, nil, msg
+			end
 		end
+		-- Get API tokens.
+		local headers = { ["authorization"] = auth_data.token_type.." "..auth_data.access_token }
+		data = {
+			grant_type = "urn:ietf:params:oauth:grant-type:jwt-bearer",
+			client_id = auth_data.client_id
+		}
+		auth_data.access_token = nil
+		auth_data.expires_at = os.time() - 3600
+		local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=base_host, url="/oauth/token", data=data, headers=headers})
+		if cde ~= 200 then return false, cde, nil, 'Incorrect response code ' .. cde .. ' expect 200' end
+		auth_data.access_token = body.access_token
+		auth_data.token_type = body.token_type
+		auth_data.expires_at = body.created_at + body.expires_in - 86400  -- 1 day margin in 45 days token expiration
+		-- Save credentials to perm storage
+		_store_credentials()
 		return res, cde, nil, msg
 	end
 	
@@ -863,12 +1190,9 @@ local function TeslaCarAPI()
 		local cmd = commands[command]
 		if cmd then 
 			-- See if we are logged in and/or need to refresh the token
-			if (not auth_data.token) or (not auth_data.expires_at) or (auth_data.expires_at < os.time()) then
-				log.Debug("SendCommand, need to (re)authenticate.")
-				local res, cde, data, msg = _authenticate()
-				if not res then
-					return false, cde, nil, "Unable to authenticate"
-				end	
+			local res, cde, data, msg = _authenticate()
+			if not res then
+				return false, cde, nil, "Unable to authenticate"
 			end
 			log.Debug("SendCommand, sending command %s.", command)
 			-- Build correct URL to use
@@ -881,11 +1205,14 @@ local function TeslaCarAPI()
 				end
 			else
 				-- Only used for listCars command.
-				url = base_url..api_url
+				url = api_url
 			end
+			local headers = {
+				["authorization"] = auth_data.token_type.." "..auth_data.access_token
+			}
 			local cmd_data = nil
 			if cmd.data then cmd_data = cmd.data(param) end
-			return _tesla_https_request(cmd.method, url, cmd_data)
+			return _tesla_https_request({method=cmd.method, url=url, data=cmd_data, headers=headers})
 		else
 			log.Error("SendCommand, got unimplemented command %s.", command)
 			return false, 501, nil, "Unimplemented command : "..(command or "?")
@@ -900,7 +1227,7 @@ local function TeslaCarAPI()
 		local res, cde, data, msg = _send_command("listCars")
 		if res then
 			if data.count then
---log.Debug("GetVehicle got %d cars.", data.count)				
+log.Debug("GetVehicle got %d cars.", data.count)				
 				if data.count > 0 then
 					local idx = 1
 					if data.count > 1 then
@@ -915,10 +1242,10 @@ local function TeslaCarAPI()
 						end
 					end
 					local resp = data.response[idx]
---log.Debug("will use car #%d.",idx)						
+log.Debug("will use car #%d, %s",idx, json.encode(resp))						
 					-- Set the corect URL for vehicle requests
-					vehicle_url = base_url .. api_url .. "/" .. resp.id_s .. "/"
---log.Debug("Car URL to use %s.",vehicle_url)						
+					vehicle_url = api_url .. "/" .. resp.id_s .. "/"
+log.Debug("Car URL to use %s.",vehicle_url)						
 					return true, cde, resp, msg
 				else
 					return false, 404, nil, "No vehicles found."
@@ -951,14 +1278,14 @@ local function TeslaCarAPI()
 	-- Get the vehicle vin numbers on the account
 	local function _get_vehicle_vins()
 		-- Check if we are authenticated
-		if auth_data.token then
+		if auth_data.access_token then
 			local vins = {}
 			local res, cde, data, msg = _send_command("listCars")
 			if res then
 				if data.count then
 					if data.count > 0 then
 						for i = 1, data.count do
-							table.insert(data.response[i].vin)
+							table_insert(vins, data.response[i].vin)
 						end
 						return true, cde, vins, msg
 					else
@@ -978,11 +1305,14 @@ local function TeslaCarAPI()
 	-- Close session.
 	local function _logoff()
 		-- Check if we are authenticated
-		if auth_data.token then
-			local res, cde, data, msg = _tesla_https_request("POST", base_url .. "oauth/revoke", { token = auth_data.token })
+		if auth_data.access_token then
+			local headers = {
+				["authorization"] = auth_data.token_type.." "..auth_data.access_token
+			}
+			local res, cde, data, msg = _tesla_https_request({method="POST", url="/oauth/revoke", data={ token = auth_data.access_token }, headers=headers})
 			if res then
 				auth_data.expires_at = nil
-				auth_data.token = nil
+				auth_data.access_token = nil
 			end
 			return res, cde, nil, msg
 		else
@@ -1146,10 +1476,13 @@ local function TeslaCarAPI()
 	end
 
 	-- Initialize API functions 
-	local function _init(email, password, vin)
+	local function _init(email, password, token_storage_handler, vin)
 		auth_data.email = email
 		auth_data.password = password
 		auth_data.vin = vin
+		auth_data.token_storage_handler = token_storage_handler
+		_retrieve_credentials()
+		
 		-- Need to make these global for luup.call_delay use. 
 		_G.TSC_send_queued = TSC_send_queued
 		_G.TSC_wakeup_vehicle = TSC_wakeup_vehicle
@@ -1234,6 +1567,21 @@ function TeslaCarModule()
 		end	
 	end
 	
+	-- Hander to store and retrieve credentials
+	local function _credentials_storage(action, cred)
+		if action == "SET" then
+			local crd = {}
+			crd.access_token = cred.access_token
+			crd.refresh_token = cred.refresh_token
+			crd.token_type = cred.token_type
+			crd.expires_at = cred.expires_at
+			var.SetJson("Credentials", crd)
+		elseif action == "GET" then
+			return var.GetJson("Credentials")
+		else
+			log.Error("CredentialStore, unknowns action : $s.", action)
+		end
+	end
 
 	-- Logoff, This will fore a new login
 	local function _reset()
@@ -1250,10 +1598,11 @@ function TeslaCarModule()
 		-- If VIN is set look for car with that VIN, else first found is used.
 		local vin = var.GetString("VIN")
 		if email ~= "" and password ~= "" then
-			TeslaCar.Initialize(email, password, vin)
-			local res, cde, data, msg = TeslaCar.Authenticate(true)
+			TeslaCar.Initialize(email, password, _credentials_storage, vin)
+			local res, cde, data, msg = TeslaCar.Authenticate(var.GetBoolean("ForcedLogon"))
 			if res then
 				var.SetNumber("LastLogin", os.time())
+				var.SetBoolean("ForcedLogon", false)
 				res, cde, data, msg = TeslaCar.GetVehicle()
 				if res then
 					readyToPoll = true
@@ -1947,6 +2296,8 @@ function TeslaCarModule()
 		var.Default("AutoSoftwareInstall", 0)
 		var.Default("AtLocationRadius", 0.5)
 		var.Default("LastLogin", 0)
+		var.Default("ForcedLogon", 1)
+		var.Default("Credentials", "{}")
 		var.Default("CarIsAwake", 0)
 		var.Default("Gui24HourClock", 1)
 		var.Default("GuiChargeRateUnits", "km/hr")
@@ -1983,7 +2334,7 @@ function TeslaCarModule()
 		var.Default("ClimateStateTS", 0)
 		var.Default("RemainingChargeTime", 0)
 		var.Default("BatteryRange", 0)
-		var.Default("BatteryLevel", 50)
+--		var.Default("BatteryLevel", 50)
 		var.Default("PowerPlugState", 0)
 		var.Default("ChargePortLatched", 0)
 		var.Default("ChargePortDoorOpen", 0)
