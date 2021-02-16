@@ -2,11 +2,13 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.00, 1 February 2021
+	V2.1, 1 February 2021
 	
 	A valid Tesla account registration is required.
 	
-	V2.00 Changes:
+	V2.1 Changes:
+		- Added more variables to the service file so they are included in the sdata request.
+	V2.0 Changes:
 		- Updated Authentication for new OAuth2 used by Tesla.
 		- Tokens are stored so no reauthentication is needed at startup.
 		- A reauthentication with UID/PWD can be forced if needed.
@@ -111,7 +113,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "2.00",
+	Version = "2.1",
 	DEV = nil,
 	LogLevel = 1,
 	Description = "Tesla Car",
