@@ -11,39 +11,117 @@
 	</specVersion>
 	<serviceStateTable>
 		<stateVariable>
-			<name>LogLevel</name>
+			<name>AutoSoftwareInstall</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>boolean</dataType>
 		</stateVariable>
 		<stateVariable>
-			<name>PluginVersion</name>
+			<name>BatteryHeaterOn</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>BatteryHeaterOn</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>BatteryRange</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>ui4</dataType>
+			<shortCode>BatteryRange</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>CarIsAwake</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>CarIsAwake</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>CarName</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
+			<shortCode>CarName</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>IconSet</name>
+			<name>CarType</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
-			<dataType>ui1</dataType>
+			<dataType>string</dataType>
+			<shortCode>CarType</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>OutsideTemp</name>
+			<name>ChargeMessage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>ChargeMessage</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargePortDoorOpen</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>ChargePortDoorOpen</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargePortLatched</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>ChargePortLatched</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargePortStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>ChargePortStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargePower</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i8</dataType>
+			<shortCode>ChargePower</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>ChargeRate</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>i4</dataType>
+			<shortCode>ChargeRate</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>InsideTemp</name>
+			<name>ChargeStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>i4</dataType>
+			<dataType>boolean</dataType>
+			<shortCode>ChargeStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>Status</name>
+			<name>ClimateMessage</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
+			<shortCode>ClimateMessage</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>StatusText</name>
+			<name>ClimateStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>ClimateStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>DoorsStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>DoorsStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>DrivePower</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>ui1</dataType>
+			<shortCode>DrivePower</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>DriveShiftState</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
+			<shortCode>DriveShiftState</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>DriveSpeed</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>i8</dataType>
+			<shortCode>DriveSpeed</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>Email</name>
@@ -51,89 +129,57 @@
 			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
-			<name>Password</name>
+			<name>FanStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
+			<dataType>boolean</dataType>
+			<shortCode>FanStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>DisplayLine1</name>
+			<name>FrontDefrosterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>FrontDefrosterStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>FruncMessage</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>DisplayLine2</name>
-			<sendEventsAttribute>no</sendEventsAttribute>
-			<dataType>string</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>ChargePortStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>ClimateStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>ChargeStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>CarIsAwake</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>DoorsStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>WindowsStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
+			<shortCode>FruncMessage</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>FruncStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>FruncStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>TruncStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>SoftwareStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
+			<name>IconSet</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>ui1</dataType>
 		</stateVariable>
 		<stateVariable>
-			<name>SunroofStatus</name>
+			<name>InServiceStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>InServiceStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>Mileage</name>
+			<name>InsideTemp</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i4</dataType>
+			<shortCode>InsideTemp</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>LastCarMessageTimestamp</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
+			<shortCode>LastCarMessageTimestamp</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>LocationHome</name>
+			<name>LightStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>LockedStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>MovingStatus</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>boolean</dataType>
+			<shortCode>LightStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>Location</name>
@@ -141,39 +187,168 @@
 			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
-			<name>BatteryRange</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>ui4</dataType>
+			<name>LockedMessage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>LockedMessage</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>CarName</name>
+			<name>LockedStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>LockedStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>LocationHome</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>LocationHome</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>LogLevel</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>Mileage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>Mileage</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>MirrorHeaterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>MirrorHeaterStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>MovingStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>MovingStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>OutsideTemp</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i4</dataType>
+			<shortCode>OutsideTemp</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>Password</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>string</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>PluginVersion</name>
 			<sendEventsAttribute>no</sendEventsAttribute>
 			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
-			<name>PowerSupplyConnected</name>
+			<name>PreconditioningStatus</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>PreconditioningStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>PowerPlugState</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>PowerPlugState</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>AutoSoftwareInstall</name>
-			<sendEventsAttribute>no</sendEventsAttribute>
-			<dataType>boolean</dataType>
-		</stateVariable>
-		<stateVariable>
-			<name>ChargePortDoorOpen</name>
+			<name>PowerSupplyConnected</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>PowerSupplyConnected</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>RearDefrosterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>RearDefrosterStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>RemainingChargeTime</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>i4</dataType>
+			<shortCode>RemainingChargeTime</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>SeatHeaterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>SeatHeaterStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>SentryMode</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
+			<shortCode>SentryMode</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>SmartPreconditioning</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>SmartPreconditioning</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>SoftwareStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>ui1</dataType>
+		</stateVariable>
+		<stateVariable>
+			<name>Status</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>Status</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>StatusText</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>StatusText</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>SteeringWeelHeaterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>SteeringWeelHeaterStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>SunroofStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>SunroofStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>TruncStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>TruncStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>TruncMessage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>TruncMessage</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>WindowsStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>WindowsStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>WindowsMessage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>WindowsMesssage</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>WiperBladesHeaterStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>WiperBladesHeaterStatus</shortCode>
 		</stateVariable>
 	</serviceStateTable>
 	<actionList>
