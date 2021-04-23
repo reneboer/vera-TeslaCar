@@ -1,11 +1,17 @@
 --[[
+
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.1, 1 February 2021
+	V2.2, 23 April 2021
 	
 	A valid Tesla account registration is required.
 	
+	V2.2 Changes:
+		- Added log file setting for development debug
+		- Improved logging module.
+		- Hardening poller routines.
+		- Minor fixes.
 	V2.1 Changes:
 		- Added more variables to the service file so they are included in the sdata request.
 	V2.0 Changes:
@@ -116,6 +122,7 @@ local pD = {
 	Version = "2.1",
 	DEV = nil,
 	LogLevel = 1,
+	LogFile = "/tmp/TeslaCar.log",
 	Description = "Tesla Car",
 	onOpenLuup = false,
 	veraTemperatureScale = "C",
@@ -495,11 +502,13 @@ local def_file = false
 local max_length = 100
 local onOpenLuup = false
 local taskHandle = -1
+local log_file = nil
+local lvl_pfx = { [10] = "_debug", [8] = "_info", [2] = "_warning", [1] = "_error" }
 
 	local function _update(level)
 		if type(level) ~= "number" then level = def_level end
 		if level >= 100 then
-			def_file = true
+			def_file = (log_file ~= nil)
 			def_debug = true
 			def_level = 10
 		elseif level >= 10 then
@@ -513,14 +522,15 @@ local taskHandle = -1
 		end
 	end	
 
-	local function _init(prefix, level, onol)
-		_update(level)
+	local function _init(prefix, level, onol, lf)
 		def_prefix = prefix
 		onOpenLuup = onol
+		log_file = lf
+		_update(level)
 	end	
 	
 	-- Build loggin string safely up to given lenght. If only one string given, then do not format because of length limitations.
-	local function prot_format(ln,str,...)
+	local function prot_format(lvl,ln,str,...)
 		local msg = ""
 		local sf = string.format
 		if arg[1] then 
@@ -529,57 +539,37 @@ local taskHandle = -1
 			msg = str or "no text"
 		end 
 		if ln > 0 then
-			return msg:sub(1,ln)
-		else
-			return msg
-		end	
+			msg = msg:sub(1,ln)
+		end
+		msg = def_prefix .. (lvl_pfx[lvl] or "") .. ": " .. msg
+		-- Write to Vera Log
+		luup.log(msg, lvl) 
+		-- Write to plugin log
+		if def_file then
+			local fh = io.open(log_file,"a")
+			fh:write(os.date("%d/%m/%Y %X") .. "   " .. msg)
+			fh:write("\n")
+			fh:close()
+		end
 	end	
 	local function _log(...) 
-		if (def_level >= 10) then
-			luup.log(def_prefix .. ": " .. prot_format(max_length,...), 50) 
-		end	
+		if (def_level >= 10) then prot_format(50, max_length,...) end	
 	end	
 	
 	local function _info(...) 
-		if (def_level >= 8) then
-			luup.log(def_prefix .. "_info: " .. prot_format(max_length,...), 8) 
-		end	
+		if (def_level >= 8) then prot_format(8, max_length,...) end	
 	end	
 
 	local function _warning(...) 
-		if (def_level >= 2) then
-			luup.log(def_prefix .. "_warning: " .. prot_format(max_length,...), 2) 
-		end	
+		if (def_level >= 2) then prot_format(2, max_length,...) end	
 	end	
 
 	local function _error(...) 
-		if (def_level >= 1) then
-			luup.log(def_prefix .. "_error: " .. prot_format(max_length,...), 1) 
-		end	
+		if (def_level >= 1) then prot_format(1, max_length,...) end	
 	end	
 
 	local function _debug(...)
-		if def_debug then
-			luup.log(def_prefix .. "_debug: " .. prot_format(-1,...), 50) 
-			if def_file then
-				local fh = io.open("/tmp/TeslaCar.log","a")
-				local msg = os.date("%d/%m/%Y %X") .. ": " .. prot_format(-1,...)
-				fh:write(msg)
-				fh:write("\n")
-				fh:close()
-			end
-		end	
-	end
-	
-	-- Write to file for detailed analisys
-	local function _logfile(...)
-		if def_file then
-			local fh = io.open("/tmp/TeslaCar.log","a")
-			local msg = os.date("%d/%m/%Y %X") .. ": " .. prot_format(-1,...)
-			fh:write(msg)
-			fh:write("\n")
-			fh:close()
-		end	
+		if def_debug then prot_format(10, -1,...) end	
 	end
 	
 	local function _devmessage(devID, status, timeout, ...)
@@ -605,7 +595,6 @@ local taskHandle = -1
 		Log = _log,
 		Debug = _debug,
 		Update = _update,
-		LogFile = _logfile,
 		DeviceMessage = _devmessage
 	}
 end 
@@ -1020,10 +1009,12 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 --log.Debug("HttpsRequest 3 %s, %s %s", tostring(bdy), tostring(cde), tostring(stts))
 		if bdy == 1 then
 			-- Capture any set-cookie header for next request
-			for key, val in pairs(hdrs) do
-				if key == "set-cookie" then
+			if hdrs then
+				for key, val in pairs(hdrs) do
+					if key == "set-cookie" then
 --log.Debug("Received header %s %s",key,val)
-					cookies_parse(host, val)
+						cookies_parse(host, val)
+					end
 				end
 			end
 			if cde == 200 then
@@ -1450,12 +1441,12 @@ log.Debug("Car URL to use %s.",vehicle_url)
 				-- No need to retry, send results to call back handler and remove command from queue.
 				Queue.pop(SendQueue)
 				_send_callback(pop_t, res, cde, data, msg)
+				command_retry = 0
 			end	
 			-- If we have more on Q, send next with an interval.
 			-- If call back did not remove the command from the queu, it will be resend.
 			if (Queue.len(SendQueue) > 0) then
 				log.Debug("SendCommandAsync, more commands to send. Queue length %d", Queue.len(SendQueue))
-				command_retry = 0
 				luup.call_delay("TSC_send_queued", interval)
 				return true, 200, nil, "More commands queued. Send next in " .. interval
 			else	
@@ -2076,7 +2067,7 @@ function TeslaCarModule()
 			if cmd.cmd == "setTemperature" then delay = delay * 2 end
 			last_scheduled_poll = os.time() + delay
 			log.Debug("Scheduling poll at %s", os.date("%X", last_scheduled_poll))
-			luup.call_delay("_poll", delay)
+			luup.call_delay("TeslaCarModule_poll", delay)
 		else
 			log.Error("Command send error. Reason #%d, %s.", cde, msg)
 			_set_status_message("Command send error. Reason  "..msg)
@@ -2119,7 +2110,7 @@ function TeslaCarModule()
 		log.Debug("Poll, start")
 		local dt = os.time() - last_scheduled_poll
 		if dt >= 0 then
-			_update_car_status(true)
+			pcall(_update_car_status, true)
 			last_scheduled_poll = 0
 		else
 			log.Info("Skipping Poll as a next is planned in %d sec.", math.abs(dt))
@@ -2127,31 +2118,39 @@ function TeslaCarModule()
 	end
 
 	-- Execute daily poll if scheduled
-	local function _daily_poll(startup)
+	local function __daily_poll(startup)
 		local sg = string.gsub
 		local force = false
 		if startup == true then force = true end -- on Vera with luup.call_delay the paramter is never nil, but empty string "" is not specified.
 
 		log.Debug("Daily Poll, enter")
+		if (not force) and readyToPoll then
+			-- If not at start-up, poll car if enabled.
+			-- PollSettings [1] = DailyPoll Enabled
+			local pol = var.Get("PollSettings")
+			local pol_t = {}
+			sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
+			if pol_t[1] == "1" then
+				log.Debug("Daily Poll, start poll.")
+				_update_car_status(true)
+			else
+				log.Debug("Daily Poll, not enabled.")
+			end
+		else
+			log.Debug("Daily Poll, not polling now.")
+		end
+	end
+	
+	-- Wrapper for daily poll loop.
+	local function _daily_poll(startup)
 		-- Schedule at next day if a time is configured
 		local poll_time = var.Get("DailyPollTime")
 		if poll_time ~= "" then
 			log.Debug("Daily Poll, scheduling for %s.", poll_time)
-			luup.call_timer("_daily_poll", 2, poll_time .. ":00", "1,2,3,4,5,6,7")
-			if (not force) and readyToPoll then
-				-- If not at start-up, poll car if enabled.
-				-- PollSettings [1] = DailyPoll Enabled
-				local pol = var.Get("PollSettings")
-				local pol_t = {}
-				sg(pol..",","(.-),", function(c) pol_t[#pol_t+1] = c end)
-				if pol_t[1] == "1" then
-					log.Debug("Daily Poll, start poll.")
-					_update_car_status(true)
-				else
-					log.Debug("Daily Poll, not enabled.")
-				end
-			else
-				log.Debug("Daily Poll, not polling now.")
+			luup.call_timer("TeslaCarModule_daily_poll", 2, poll_time .. ":00", "1,2,3,4,5,6,7")
+			local res, stat = pcall(__daily_poll, startup)
+			if not res then
+				log.Error("Daily Poll failed. Error %s.", stat)
 			end
 		else
 			log.Debug("Daily Poll, no time set.")
@@ -2165,11 +2164,9 @@ function TeslaCarModule()
 	--	* When charging it can go to sleep, but you may want to poll more frequently depending on remining charge time. E.g. 
 	--		- if 10 hrs left, poll once per hour, if less than an hour, poll every five minutes (car will not go asleep).
 	--	* For other activities like heating, poll every minute or so.
-	local function _scheduled_poll(startup)
+	local function __scheduled_poll(startup)
 		local sg = string.gsub
-
 		log.Debug("Scheduled Poll, enter")
-		luup.call_delay("_scheduled_poll", 60)
 		if readyToPoll then
 			local interval, awake = 0, false
 			local force = false
@@ -2215,7 +2212,7 @@ function TeslaCarModule()
 			if mvStat then
 				interval = pol_t[6]
 				force = true
-			elseif (awake and (last_wake_delta) < 200) or swStat ~= 0 or (not lckStat) or clmStat or smStat then
+			elseif (awake and (last_wake_delta < 200)) or swStat ~= 0 or (not lckStat) or clmStat or smStat then
 				interval = pol_t[5]
 				force = true
 			elseif var.GetBoolean("ChargeStatus") then
@@ -2249,6 +2246,18 @@ function TeslaCarModule()
 			end
 		else
 			log.Warning("Scheduled Poll, not yet ready to poll.")
+		end
+	end
+
+	-- Wrapper for one minute poll loop
+	local function _scheduled_poll(startup)
+		-- Schedule fro next minute
+		local int = var.GetNumber("MonitorAwakeInterval")
+		if int < 60 then int = 60 end
+		luup.call_delay("TeslaCarModule_scheduled_poll", int)
+		local res, stat = pcall(__scheduled_poll, startup)
+		if not res then
+			log.Error("Scheduled Poll failed. Error %s.", stat)
 		end
 	end
 
@@ -2353,10 +2362,9 @@ function TeslaCarModule()
 		var.Default("CarCanActuateTrunks", 0)
 		var.Default("CarCanActuateWindows", 0)
 		
-		_G._poll = _poll
-		_G._daily_poll = _daily_poll
-		_G._scheduled_poll = _scheduled_poll
-		_G._retry_command = _retry_command
+		_G.TeslaCarModule_poll = _poll
+		_G.TeslaCarModule_daily_poll = _daily_poll
+		_G.TeslaCarModule_scheduled_poll = _scheduled_poll
 		
 		-- Register call backs
 		TeslaCar.RegisterCallBack("getVehicleDetails", CB_getVehicleDetails)
@@ -2591,7 +2599,7 @@ function TeslaCarModule_Initialize(lul_device)
 	utils = utilsAPI()
 	var.Initialize(SIDS.MODULE, pD.DEV)
 	local lv = var.Default("LogLevel", pD.LogLevel)
-	log.Initialize(pD.Description, tonumber(lv), true)
+	log.Initialize(pD.Description, tonumber(lv), true, pD.LogFile)
 	utils.Initialize()
 	
 	log.Info("device #%d is initializing!", tonumber(pD.DEV))
