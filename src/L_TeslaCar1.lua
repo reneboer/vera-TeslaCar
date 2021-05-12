@@ -3,10 +3,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.2, 23 April 2021
+	V2.3, 23 April 2021
 	
 	A valid Tesla account registration is required.
 	
+	V2.3 Changes:
+		- Fix to logAPI.DisplayMessage
 	V2.2 Changes:
 		- Added log file setting for development debug
 		- Improved logging module.
@@ -573,7 +575,21 @@ local lvl_pfx = { [10] = "_debug", [8] = "_info", [2] = "_warning", [1] = "_erro
 	end
 	
 	local function _devmessage(devID, status, timeout, ...)
-		local message = prot_format(60,...) or ""
+		local function pf(ln,str,...)
+			local msg = ""
+			local sf = string.format
+			if arg[1] then 
+				_, msg = pcall(sf, str, unpack(arg))
+			else 
+				msg = str or "no text"
+			end 
+			if ln > 0 then
+				return msg:sub(1,ln)
+			else
+				return msg
+			end	
+		end
+		local message = pf(60,...) or ""
 		-- On Vera the message must be an exact repeat to erase, on openLuup it must be empty.
 		if onOpenLuup and status == -2 then
 			message = ""
