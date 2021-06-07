@@ -3,10 +3,14 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.3, 23 April 2021
+	V2.4, 7 June 2021
 	
 	A valid Tesla account registration is required.
 	
+	V2.4 Changes:
+		- Replace all https request to owner-api.teslamotors.com to use cURL for out dated LuaSec version (Vera)
+		- Added zlib support for openLuup.
+		- Fix for log api on log.Debug
 	V2.3 Changes:
 		- Fix to logAPI.DisplayMessage
 	V2.2 Changes:
@@ -89,6 +93,12 @@ local https     = require("ssl.https")
 local http		= require("socket.http")
 local mime 		= require("mime")
 local bit		= require("bit")
+local zlib = nil
+pcall(function()
+	-- Install package: sudo apt-get install lua-zlib
+	zlib = require('zlib')
+	if not zlib.inflate then zlib = nil end
+end)
 
 -- Modules definitions.
 local TeslaCar
@@ -121,7 +131,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "2.1",
+	Version = "2.4",
 	DEV = nil,
 	LogLevel = 1,
 	LogFile = "/tmp/TeslaCar.log",
@@ -571,7 +581,7 @@ local lvl_pfx = { [10] = "_debug", [8] = "_info", [2] = "_warning", [1] = "_erro
 	end	
 
 	local function _debug(...)
-		if def_debug then prot_format(10, -1,...) end	
+		if def_debug then prot_format(50, -1,...) end	
 	end
 	
 	local function _devmessage(devID, status, timeout, ...)
@@ -807,8 +817,8 @@ Adviced polling:
 	* For other activities like heating, poll every five minutes.
 ]]
 local function TeslaCarAPI()
-local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, match, gmatch, len, ceil, floor, math_min, math_max =
-   table.unpack or unpack, table.insert, table.concat, string.byte, string.char, string.rep, string.sub, string.gsub, string.match, string.gmatch, string.len, math.ceil, math.floor, math.min, math.max
+local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, match, gmatch, len, ceil, floor, math_min, math_max, slower =
+   table.unpack or unpack, table.insert, table.concat, string.byte, string.char, string.rep, string.sub, string.gsub, string.match, string.gmatch, string.len, math.ceil, math.floor, math.min, math.max, string.lower
 
 	-- Map commands to details
 	local commands = {
@@ -857,7 +867,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 	-- Authentication data
 	local auth_data = {
---		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
+		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
 		["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
 		["email"] = nil,
 		["password"] = nil,
@@ -871,11 +881,11 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 	-- Header values to add to each HTTP request
 	local base_request_headers = {
-		["user-agent"] = "VeraTeslaCarApp/2.0",
-		["accept"] = "*/*",
-		["accept-encoding"] = "deflate",
-		["connection"] = "keep-alive",
-		["content-type"] = "application/json",
+		["User-Agent"] = "VeraTeslaCarApp/2.0",
+		["Accept"] = "*/*",
+		["Accept-Encoding"] = "deflate",
+		["Connection"] = "keep-alive",
+		["Content-Type"] = "application/json",
 		["x-tesla-user-agent"] = "VeraTeslaCarApp/2.0",
 		["x-requested-with"] = "com.teslamotors.tesla"	
 	}
@@ -935,8 +945,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		local cookie_tab = cookie_jar[host]
 		local cookies = gsub(cookies, "Expires=(.-); ", "")
 		for cookie in gmatch(cookies..',','(.-),') do
-			local key,val,pth = match(cookie..";", '(.-)=(.-); [P|p]ath=(.-);')
-			if not key then key,val,pth = match(cookie..";", '(.-)=(.-);[P|p]ath=(.-);') end
+			local key,val,pth = match(cookie..";", '(.-)=(.-);.- [P|p]ath=(.-);')
+			if not key then key,val,pth = match(cookie..";", '(.-)=(.-);.- [P|p]ath=(.-);') end
 			if key then
 				key = gsub(key," ","")
 --				if pth == "/" then pth = "" end
@@ -979,6 +989,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 	-- HTTPs request wrapper with Tesla API required attributes
 	local function _tesla_https_request(params)
+		local cl = 0
 		local result = {}
 		local request_body = nil
 		local host = params.host or base_host
@@ -989,62 +1000,118 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		if params.headers then headers = copy_header(params.headers, headers) end
 		headers["host"] = params.host
 		
-		-- Add any cookies for the host.
-		headers['cookie'] = cookies_build(host) 
-		if params.params then
-			-- Add parameters to URL
-			url = url .. "?" .. url_encode(params.params)
-		end
-		if params.data then
+		if type(params.data) == "table" then
 			-- Build request body
-			if headers["content-type"] == "application/x-www-form-urlencoded" then
+			if headers["Content-Type"] == "application/x-www-form-urlencoded" then
 				request_body = url_encode(params.data)
 			else
 				-- Default is json
 				request_body = json.encode(params.data)
 			end
-			headers["content-length"] = len(request_body)
+			cl = len(request_body)
+		elseif type(params.data) == "string" then
+			request_body = params.data
+			cl = len(request_body)
 		else	
-			headers["content-length"] = 0
 		end 
---log.Debug("HttpsRequest method %s, url %s", params.method, url)		
-		http.TIMEOUT = TCS_HTTP_TIMEOUT
-		local bdy,cde,hdrs,stts = https.request{
-			url = url, 
-			method = params.method,
--- Have to force protocol on Vera.
-			protocol = "tlsv1_2",
-			options =  {"all", "no_sslv2", "no_sslv3"},
-            verify = "none",
--- vera must end			
-			sink = ltn12.sink.table(result),
-			source = ltn12.source.string(request_body),
-			redirect = false,
-			headers = headers
-		}
---log.Debug("HttpsRequest 3 %s, %s %s", tostring(bdy), tostring(cde), tostring(stts))
-		if bdy == 1 then
-			-- Capture any set-cookie header for next request
-			if hdrs then
-				for key, val in pairs(hdrs) do
-					if key == "set-cookie" then
---log.Debug("Received header %s %s",key,val)
-						cookies_parse(host, val)
-					end
+
+		-- For LuaSec older than 0.8 use cURL
+		local httpsVersion = string.sub(https._VERSION,1,3)	-- Handle versions like 1.0.1 as 1.0
+		if (tonumber(httpsVersion,10) < 0.8) and host==base_host then
+			log.Debug("Old LuaSec version detected, using cURL for https request")
+			local cmdStr = 'curl -s -X '..params.method
+			-- Add headers
+			for key, val in pairs(headers) do
+				local lkey = slower(key)
+				if key == "user-agent" then
+					cmdStr = cmdStr .. ' -A "'..val..'"'
+				elseif key == "connection" or key == "accept" or key == "accept-encoding" then
+				else
+					cmdStr = cmdStr .. ' -H "'..key..': '..val..'"'
 				end
 			end
-			if cde == 200 then
-				if hdrs["content-type"] == "application/json" or hdrs["content-type"] == "application/json; charset=utf-8" then
-					return true, cde, json.decode(table_concat(result)), "OK", hdrs
+			
+			-- Add data
+			if request_body then
+				cmdStr = cmdStr .. " -d '"..request_body.."'"
+			end
+--log.Debug("cURL command %s %s",cmdStr,url)
+			local handle=io.popen(cmdStr..' '..url )
+			if handle then
+				local response = handle:read('*a')
+				handle:close()
+--log.Debug("cURL command response %s", response)
+				-- These are all json commands, check for expected response 
+				if sub(response,1,1) == "{" then
+					return true, 200, json.decode(response), "OK", nil
 				else
-					return true, cde, table_concat(result), "OK", hdrs
+					return true, 200, response, "OK", nil
 				end
 			else
-				return true, cde, table_concat(result), stts, hdrs
+				-- Bad request
+				return false, 400, nil, "HTTP/1.1 400 BAD REQUEST !!", nil
 			end
 		else
-			-- Bad request
-			return false, 400, nil, "HTTP/1.1 400 BAD REQUEST !!", nil
+			-- Add any cookies for the host.
+			headers['Cookie'] = cookies_build(host) 
+			if zlib then
+				headers["Accept-Encoding"] = "gzip, deflate"
+			else
+				headers["Accept-Encoding"] = "deflate"
+			end
+			if params.params then
+				-- Add parameters to URL
+				url = url .. "?" .. url_encode(params.params)
+			end
+			headers["Content-Length"] = cl
+		
+--log.Debug("HttpsRequest method %s, url %s", params.method, url)		
+			for key, val in pairs(headers) do
+--log.Debug("Send header %s %s",key,val)
+			end
+			http.TIMEOUT = TCS_HTTP_TIMEOUT
+			local bdy,cde,hdrs,stts = https.request{
+				url = url, 
+				method = params.method,
+-- Have to force protocol on Vera.
+				protocol = "tlsv1_2",
+				options  = {"all", "no_sslv2", "no_sslv3"},
+				verify   = "none",
+ -- vera must end			
+				sink = ltn12.sink.table(result),
+				source = ltn12.source.string(request_body),
+				redirect = false,
+				headers = headers
+			}
+			if bdy == 1 then
+				-- Capture any set-cookie header for next request
+				if hdrs then
+					for key, val in pairs(hdrs) do
+--log.Debug("Received header %s %s",key,val)
+						if key == "set-cookie" then
+							cookies_parse(host, val)
+						end
+					end
+				end
+				local enc = hdrs["content-encoding"] or "none"
+				if type(result) == 'table' then result = table.concat(result) end
+				if zlib and string.find(enc, "gzip") then
+					result = zlib.inflate()(result)
+				end	
+--log.Debug(result)
+				if cde == 200 then
+					if hdrs["content-type"] == "application/json" or hdrs["content-type"] == "application/json; charset=utf-8" then
+						return true, cde, json.decode(result), "OK", hdrs
+					else
+						return true, cde, result, "OK", hdrs
+					end
+				else
+					return true, cde, result, stts, hdrs
+				end
+			else
+				-- Bad request
+				return false, 400, nil, "HTTP/1.1 400 BAD REQUEST !!", nil
+			end
 		end
 	end	
 	
@@ -1135,7 +1202,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 			-- Do logon
 			local headers = {
-				["content-type"] = "application/x-www-form-urlencoded"
+				["Content-Type"] = "application/x-www-form-urlencoded"
 			}
 			local data = {
 				{"identity", auth_data.email},
@@ -1155,7 +1222,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				end
 			elseif cde == 302 then 
 				local loc_code = extract_url_parameters(hdrs["location"],"code")
-				if not loc_code then return false, cde, nil, 'No loc_code found' end
+				if not loc_code or loc_code == "" then return false, cde, nil, 'No loc_code found' end
 				log.Debug("location code : %s" , loc_code)			
 
 				-- Get OAuth tokens
@@ -1163,7 +1230,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 					grant_type = "authorization_code",
 					client_id = "ownerapi",
 					code_verifier = code_verifier,
-					code = loc_code,
+					code = {loc_code},
 					redirect_uri = "https://auth.tesla.com/void/callback"
 				}
 				local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
@@ -1177,21 +1244,26 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			end
 		end
 		-- Get API tokens.
-		local headers = { ["authorization"] = auth_data.token_type.." "..auth_data.access_token }
+		local headers = { ["Authorization"] = auth_data.token_type.." "..auth_data.access_token }
 		data = {
 			grant_type = "urn:ietf:params:oauth:grant-type:jwt-bearer",
-			client_id = auth_data.client_id
+			client_id = auth_data.client_id,
+			client_secret = auth_data.client_secret
 		}
 		auth_data.access_token = nil
 		auth_data.expires_at = os.time() - 3600
 		local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=base_host, url="/oauth/token", data=data, headers=headers})
 		if cde ~= 200 then return false, cde, nil, 'Incorrect response code ' .. cde .. ' expect 200' end
-		auth_data.access_token = body.access_token
-		auth_data.token_type = body.token_type
-		auth_data.expires_at = body.created_at + body.expires_in - 86400  -- 1 day margin in 45 days token expiration
-		-- Save credentials to perm storage
-		_store_credentials()
-		return res, cde, nil, msg
+		if body.token_type then
+			auth_data.access_token = body.access_token
+			auth_data.token_type = body.token_type
+			auth_data.expires_at = body.created_at + body.expires_in - 86400  -- 1 day margin in 45 days token expiration
+			-- Save credentials to perm storage
+			_store_credentials()
+			return res, cde, nil, msg
+		else
+			return false, cde, nil, 'Incorrect token response: '..(body.response or "non-JSON reply")
+		end
 	end
 	
 	-- Send a command to the API.
@@ -1485,11 +1557,12 @@ log.Debug("Car URL to use %s.",vehicle_url)
 	end
 
 	-- Initialize API functions 
-	local function _init(email, password, token_storage_handler, vin)
+	local function _init(email, password, token_storage_handler, vin, vera_clnt)
 		auth_data.email = email
 		auth_data.password = password
 		auth_data.vin = vin
 		auth_data.token_storage_handler = token_storage_handler
+		vera_client = vera_clnt or false
 		_retrieve_credentials()
 		
 		-- Need to make these global for luup.call_delay use. 
@@ -1607,7 +1680,7 @@ function TeslaCarModule()
 		-- If VIN is set look for car with that VIN, else first found is used.
 		local vin = var.GetString("VIN")
 		if email ~= "" and password ~= "" then
-			TeslaCar.Initialize(email, password, _credentials_storage, vin)
+			TeslaCar.Initialize(email, password, _credentials_storage, vin, not pD.onOpenLuup)
 			local res, cde, data, msg = TeslaCar.Authenticate(var.GetBoolean("ForcedLogon"))
 			if res then
 				var.SetNumber("LastLogin", os.time())
