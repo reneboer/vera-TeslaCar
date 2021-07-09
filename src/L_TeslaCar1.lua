@@ -3,10 +3,12 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.4, 7 June 2021
+	V2.5, 14 June 2021
 	
 	A valid Tesla account registration is required.
 	
+	V2.5 Changes:
+		- Fix in case no return headers in http response.
 	V2.4 Changes:
 		- Replace all https request to owner-api.teslamotors.com to use cURL for out dated LuaSec version (Vera)
 		- Added zlib support for openLuup.
@@ -1085,6 +1087,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			}
 			if bdy == 1 then
 				-- Capture any set-cookie header for next request
+				local enc = "none"
 				if hdrs then
 					for key, val in pairs(hdrs) do
 --log.Debug("Received header %s %s",key,val)
@@ -1092,8 +1095,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 							cookies_parse(host, val)
 						end
 					end
+					enc = hdrs["content-encoding"] or "none"
 				end
-				local enc = hdrs["content-encoding"] or "none"
 				if type(result) == 'table' then result = table.concat(result) end
 				if zlib and string.find(enc, "gzip") then
 					result = zlib.inflate()(result)
