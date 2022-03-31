@@ -3,10 +3,15 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.5, 14 June 2021
+	V2.7, 29 March 2022
 	
-	A valid Tesla account registration is required.
+	A valid Tesla account registration is required with OWNER or DRIVER access type.
 	
+	V2.7 Chagnges:
+		- Updates for changed token handling by Tesla from March 21, 2022.
+	V2.6 Changes:
+		- Changed user agent to standard one.
+		- Added Scheduled Charging and Departure commands. (in progress)
 	V2.5 Changes:
 		- Fix in case no return headers in http response.
 	V2.4 Changes:
@@ -133,7 +138,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "2.4",
+	Version = "2.7",
 	DEV = nil,
 	LogLevel = 1,
 	LogFile = "/tmp/TeslaCar.log",
@@ -555,7 +560,8 @@ local lvl_pfx = { [10] = "_debug", [8] = "_info", [2] = "_warning", [1] = "_erro
 		if ln > 0 then
 			msg = msg:sub(1,ln)
 		end
-		msg = def_prefix .. (lvl_pfx[lvl] or "") .. ": " .. msg
+		local pl = math.min(10, lvl)
+		msg = def_prefix .. (lvl_pfx[pl] or "") .. ": " .. msg
 		-- Write to Vera Log
 		luup.log(msg, lvl) 
 		-- Write to plugin log
@@ -853,6 +859,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		["setChargeLimit"] 			= { method = "POST", url ="command/set_charge_limit", data = function(p) return {percent=p} end },
 		["setMaximumChargeLimit"] 	= { method = "POST", url ="command/charge_max_range" },
 		["setStandardChargeLimit"]  = { method = "POST", url ="command/charge_standard" },
+		["setScheduledCharging"]    = { method = "POST", url ="command/set_scheduled_charging", data = function(e,t) return {enable=e,time=t} end },
+		["setScheduledDeparture"]   = { method = "POST", url ="command/set_scheduled_departure", data = function(e,pe,oe,pt,ot,dt,oe) return {enable=e, preconditioning_enabled=pe, off_peak_charging_enabled=oe,preconditioning_times=pt,off_peak_charging_times=ot,scheduled_departure_time=dt,off_peak_hours_end_time,op} end  },
 		["ventSunroof"] 			= { method = "POST", url ="command/sun_roof_control", data = function(p) return {state="vent"} end },
 		["closeSunroof"] 			= { method = "POST", url ="command/sun_roof_control", data = function(p) return {state="close"} end },
 		["ventWindows"] 			= { method = "POST", url ="command/window_control", data = function(p) return {command="vent",lat=var.GetNumber("Latitude"),lon=var.GetNumber("Longitude")} end },
@@ -865,6 +873,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 	local auth_host = "auth.tesla.com"
 	local vehicle_url = nil
 	local api_url = "/api/1/vehicles"
+--	local ui_agent = "VeraTeslaCarApp/2.0"
+	local ui_agent = "TeslaApp/3.10.9-433/adff2e065/android/10" -- V2.6
 	local cookie_jar = {}
 
 	-- Authentication data
@@ -883,12 +893,12 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 	-- Header values to add to each HTTP request
 	local base_request_headers = {
-		["User-Agent"] = "VeraTeslaCarApp/2.0",
+		["User-Agent"] = ui_agent,
 		["Accept"] = "*/*",
 		["Accept-Encoding"] = "deflate",
 		["Connection"] = "keep-alive",
 		["Content-Type"] = "application/json",
-		["x-tesla-user-agent"] = "VeraTeslaCarApp/2.0",
+		["x-tesla-user-agent"] = ui_agent,
 		["x-requested-with"] = "com.teslamotors.tesla"	
 	}
 
@@ -1019,6 +1029,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 		-- For LuaSec older than 0.8 use cURL
 		local httpsVersion = string.sub(https._VERSION,1,3)	-- Handle versions like 1.0.1 as 1.0
+		log.Debug("LuaSec version found %s",https._VERSION)
 		if (tonumber(httpsVersion,10) < 0.8) and host==base_host then
 			log.Debug("Old LuaSec version detected, using cURL for https request")
 			local cmdStr = 'curl -s -X '..params.method
@@ -1101,7 +1112,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				if zlib and string.find(enc, "gzip") then
 					result = zlib.inflate()(result)
 				end	
---log.Debug(result)
+--log.Debug("Body :"..result)
 				if cde == 200 then
 					if hdrs["content-type"] == "application/json" or hdrs["content-type"] == "application/json; charset=utf-8" then
 						return true, cde, json.decode(result), "OK", hdrs
@@ -1163,9 +1174,13 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			auth_data.refresh_token = body.refresh_token
 			auth_data.access_token = body.access_token
 			auth_data.token_type = body.token_type
+			auth_data.expires_at = os.time() + body.expires_in - 10
+			-- Save credentials to perm storage
+			_store_credentials()
+			return res, cde, nil, msg
 		else
 			-- Full authenticate is needed.
-			log.Debug("Full authenication user UID/PWD required.")
+			log.Debug("Full authentication user UID/PWD required.")
 			-- Clear current values
 			auth_data.access_token = nil
 			auth_data.refresh_token = nil
@@ -1185,6 +1200,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				{"redirect_uri", "https://" .. auth_host .. "/void/callback"},
 				{"response_type", "code"},
 				{"scope", "openid email offline_access"},
+				{"login_hint", auth_data.email},	-- V2.7
 				{"state", state}
 			}
 			local res, cde, body, msg, hdrs = _tesla_https_request({method="GET", host=auth_host, url="/oauth2/v3/authorize", params=params})
@@ -1193,6 +1209,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			-- Collect known hidden input fields from form.
 			local inputs = {}
 			local form = match(body,'<form method="post" id="form" class="sso%-form sign%-in%-form">(.+)</form>')
+--			if not form then  form = match(body,'<form method="post" id="form">(.+)</form>') end
 			for str in gmatch(form,'<input type="hidden" name=(.-) />') do
 				local key, val = match(str, '"(.-)" value="(.+)"')
 				if key and val then
@@ -1201,6 +1218,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				end	
 			end
 			log.Debug('_csrf from landing page : %s', inputs._csrf)
+			log.Debug('_phase from landing page : %s', inputs._phase)
 			log.Debug('transaction_id from landing page : %s', inputs.transaction_id)
 
 			-- Do logon
@@ -1223,7 +1241,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				else
 					return false, cde, nil, "Retry"
 				end
-			elseif cde == 302 then 
+			end	
+			if cde == 302 or hdrs["location"] then 
 				local loc_code = extract_url_parameters(hdrs["location"],"code")
 				if not loc_code or loc_code == "" then return false, cde, nil, 'No loc_code found' end
 				log.Debug("location code : %s" , loc_code)			
@@ -1242,10 +1261,15 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				auth_data.refresh_token = body.refresh_token
 				auth_data.access_token = body.access_token
 				auth_data.token_type = body.token_type
+				auth_data.expires_at = os.time() + body.expires_in - 10
+				-- Save credentials to perm storage
+				_store_credentials()
+				return res, cde, nil, msg
 			else
 				return false, cde, nil, msg
 			end
 		end
+--[[ not getting here anymore. Step obsolete as of 21 March 2022
 		-- Get API tokens.
 		local headers = { ["Authorization"] = auth_data.token_type.." "..auth_data.access_token }
 		data = {
@@ -1267,6 +1291,8 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		else
 			return false, cde, nil, 'Incorrect token response: '..(body.response or "non-JSON reply")
 		end
+		]]
+--
 	end
 	
 	-- Send a command to the API.
