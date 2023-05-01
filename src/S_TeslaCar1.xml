@@ -2,7 +2,7 @@
 <!-- 
  S_TeslaCar1.xml Vera/openLuup "TeslaCar" Plug-in
  Written by Rene Boer
- V1.15 13 August 2020
+ V2.1 16 February 2021
 -->
 <scpd xmlns="urn:schemas-upnp-org:service-1-0">
 	<specVersion>
@@ -124,7 +124,7 @@
 			<shortCode>DriveSpeed</shortCode>
 		</stateVariable>
 		<stateVariable>
-			<name>Email</name>
+			<name>InitialToken</name>
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>string</dataType>
 		</stateVariable>
@@ -232,11 +232,6 @@
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>i4</dataType>
 			<shortCode>OutsideTemp</shortCode>
-		</stateVariable>
-		<stateVariable>
-			<name>Password</name>
-			<sendEventsAttribute>yes</sendEventsAttribute>
-			<dataType>string</dataType>
 		</stateVariable>
 		<stateVariable>
 			<name>PluginVersion</name>

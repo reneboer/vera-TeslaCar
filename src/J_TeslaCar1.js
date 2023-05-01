@@ -1,8 +1,12 @@
 //# sourceURL=J_TeslaCar1.js
 // openLuup "TeslaCar" Plug-in
 // Written by R.Boer. 
-// V1.15 13 August 2020
+// V3.0 21 April 2023
 //
+// V3.0 Changes:
+//		Use of initial token rather than email and password for authentication.
+// V2.3 Changes:
+//		Added version number to panel headers.
 // V1.15 Changes:
 //		Added sntry mode control.
 // V1.14 Changes:
@@ -31,6 +35,12 @@ var TeslaCar = (function (api) {
 	// Forward declaration.
     var myModule = {};
 
+	function _panelHeader(deviceID) {
+		var vrsn = varGet(deviceID, 'Version');
+		return '<div class="deviceCpanelSettingsPage">'
+			+ '<h4>Device #'+deviceID+'&nbsp;&nbsp;&nbsp;'+api.getDisplayedDeviceName(deviceID)+'&nbsp;&nbsp;&nbsp;<font style="vertical-align:middle;" size=-2>Plugin Version '+vrsn+'</font></h3>';
+	}
+	
     function _onBeforeCpanelClose(args) {
     }
 
@@ -44,8 +54,7 @@ var TeslaCar = (function (api) {
         try {
 			var deviceID = api.getCpanelDeviceId();
 			var deviceObj = api.getDeviceObject(deviceID);
-			var panelHtml = '<div class="deviceCpanelSettingsPage">'
-				+ '<h3>Device #'+deviceID+'&nbsp;&nbsp;&nbsp;'+api.getDisplayedDeviceName(deviceID)+'</h3>';
+			var panelHtml = _panelHeader(deviceID);
 			if (deviceObj.disabled === '1' || deviceObj.disabled === 1) {
 				panelHtml += '<br>Plugin is disabled in Attributes.';
 			} else {	
@@ -56,8 +65,7 @@ var TeslaCar = (function (api) {
 				var limitIntervals = [{'value':'75','label':'75%'},{'value':'80','label':'80%'},{'value':'85','label':'85%'},{'value':'90','label':'90%'}];
 				var logLevel = [{'value':'1','label':'Error'},{'value':'2','label':'Warning'},{'value':'8','label':'Info'},{'value':'10','label':'Debug'},{'value':'100','label':'Test Debug'}];
 
-				panelHtml += htmlAddInput(deviceID, 'Tesla Email', 30, 'Email') + 
-				htmlAddInput(deviceID, 'Tesla Password', 30, 'Password')+
+				panelHtml += htmlAddInput(deviceID, 'Initial Token', 30, 'InitialToken') + 
 				htmlAddPulldown(deviceID, 'Daily Poll ?', 'PI0', yesNo)+
 				htmlAddInput(deviceID, 'Daily Poll time (hh:mm)', 30, 'DailyPollTime')+ 
 				htmlAddPulldown(deviceID, 'Poll Interval; Idle', 'PI1', chargeIntervals1)+
@@ -79,8 +87,7 @@ var TeslaCar = (function (api) {
         try {
 			var deviceID = api.getCpanelDeviceId();
 			var deviceObj = api.getDeviceObject(deviceID);
-			var panelHtml = '<div class="deviceCpanelSettingsPage">'
-				+ '<h3>Device #'+deviceID+'&nbsp;&nbsp;&nbsp;'+api.getDisplayedDeviceName(deviceID)+'</h3>';
+			var panelHtml = _panelHeader(deviceID);
 			if (deviceObj.disabled === '1' || deviceObj.disabled === 1) {
 				panelHtml += '<br>Plugin is disabled in Attributes.';
 			} else {	
@@ -133,8 +140,7 @@ var TeslaCar = (function (api) {
         try {
 			var deviceID = api.getCpanelDeviceId();
 			var deviceObj = api.getDeviceObject(deviceID);
-			var panelHtml = '<div class="deviceCpanelSettingsPage">'
-				+ '<h3>Device #'+deviceID+'&nbsp;&nbsp;&nbsp;'+api.getDisplayedDeviceName(deviceID)+'</h3>';
+			var panelHtml = _panelHeader(deviceID);
 			if (deviceObj.disabled === '1' || deviceObj.disabled === 1) {
 				panelHtml += '<br>Plugin is disabled in Attributes.';
 			} else {	

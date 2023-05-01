@@ -3,11 +3,24 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V2.7, 29 March 2022
+	V3.0, 1 May 2023
 	
 	A valid Tesla account registration is required with OWNER or DRIVER access type.
 	
-	V2.7 Chagnges:
+	Get the initial refresh token to start the plugin. When inactive/disabled for more than eight hours, a new initial token may be required as well.
+	- Get the token from https://tesla-info.com/tesla-token.php
+		https://auth.tesla.com/oauth2/v3/authorize?
+	- Or from App for IOs https://apps.apple.com/us/app/auth-app-for-tesla/id1552058613
+	- Or Andriod App https://play.google.com/store/apps/details?id=net.leveugle.teslatokens
+	- Or TeslaAuth for macOS, Linux or Windows https://github.com/adriankumpf/tesla_auth
+	
+	Form these copy the refresh token into the Initial Token setting. The Initial token will be erased after login.
+	
+	V3.0 Changges:
+		- Use of initial token rather than email and password for authentication. Email and password will be erased for security.
+	V2.8 Changges:
+		- Fix to old LuaSec version detection.
+	V2.7 Changges:
 		- Updates for changed token handling by Tesla from March 21, 2022.
 	V2.6 Changes:
 		- Changed user agent to standard one.
@@ -138,16 +151,16 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "2.7",
+	Version = "3.0",
 	DEV = nil,
 	LogLevel = 1,
 	LogFile = "/tmp/TeslaCar.log",
 	Description = "Tesla Car",
 	onOpenLuup = false,
-	veraTemperatureScale = "C",
-	pwdMessage = "Check UID/PWD in settings",
-	retryLoginMessage = "Login failed, retrying...",
-	failedLoginMessage = "Login failed, check UID/PWD."
+	veraTemperatureScale = "C"
+--	pwdMessage = "Check Initial Token in settings",
+--	retryLoginMessage = "Login failed, retrying...",
+--	failedLoginMessage = "Login failed, check Initial Token."
 }
 
 -- Define message when condition is not true
@@ -647,13 +660,13 @@ local  table_insert, table_concat, format, byte, char, string_rep, sub, gsub, ce
    table.insert, table.concat, string.format, string.byte, string.char, string.rep, string.sub, string.gsub, math.ceil, math.floor
 
 	local function _init()
-		local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+--[[		local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 		-- for urandom
 		for c in chars:gmatch"." do
 			table_insert(charTable, c)
 		end
-
+]]
 	end	
 
 	-- See what system we are running on, some Vera or OpenLuup
@@ -714,6 +727,7 @@ local  table_insert, table_concat, format, byte, char, string_rep, sub, gsub, ce
 	end
 
 	-- Generate a (semi) random string
+--[[
 	local function _urandom(length)
 		local random = math.random
 		local randomString = {}
@@ -723,7 +737,7 @@ local  table_insert, table_concat, format, byte, char, string_rep, sub, gsub, ce
 		end
 		return table_concat(randomString)
 	end
-	
+]]	
 	-- remove training chars
 	local function _rstrip(str, chr)
 		if sub(str,-1) == chr then 
@@ -764,7 +778,7 @@ local  table_insert, table_concat, format, byte, char, string_rep, sub, gsub, ce
 		IsUI7 = _UI7,
 		IsUI8 = _UI8,
 		IsOpenLuup = _OpenLuup,
-		urandom = _urandom,
+--		urandom = _urandom,
 		rstrip = _rstrip,
 		uuencode = _uuencode
 	}
@@ -879,10 +893,9 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 
 	-- Authentication data
 	local auth_data = {
-		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
-		["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
-		["email"] = nil,
-		["password"] = nil,
+--		["client_secret"] = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
+--		["client_id"] = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384",
+		["initial_token"] = nil,
 		["vin"] = nil,
 		["access_token"] = nil,
 		["refresh_token"] = nil,
@@ -1030,7 +1043,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		-- For LuaSec older than 0.8 use cURL
 		local httpsVersion = string.sub(https._VERSION,1,3)	-- Handle versions like 1.0.1 as 1.0
 		log.Debug("LuaSec version found %s",https._VERSION)
-		if (tonumber(httpsVersion,10) < 0.8) and host==base_host then
+		if (tonumber(httpsVersion) < 0.8) and host==base_host then
 			log.Debug("Old LuaSec version detected, using cURL for https request")
 			local cmdStr = 'curl -s -X '..params.method
 			-- Add headers
@@ -1148,151 +1161,49 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 	end
 
 	local function  _authenticate (force)
-		if (not force) and auth_data.access_token and auth_data.expires_at and auth_data.expires_at > os.time() then
+		if (not force) and auth_data.access_token and auth_data.refresh_token and auth_data.expires_at and auth_data.expires_at > os.time() then
 			log.Debug("Tokens valid. No need to authenticate.")
 			return true, 200, nil, "OK"
 		end
 		-- Need to logon to obtain tokens
 		cookies_clear(auth_host)
+		local refresh_token = nil
 		-- See if we have a refresh token, so use that.
 		if (not force) and auth_data.refresh_token then
 			-- We have a refresh token, so use that.
 			log.Debug("Refesh Token availble to reauthenticate.")
-			data = {
-				grant_type = "refresh_token",
-				client_id = "ownerapi",
-				refresh_token = auth_data.refresh_token,
-				scope = "openid email offline_access"
-			}
-			-- Clear current values
-			auth_data.access_token = nil
-			auth_data.refresh_token = nil
-			auth_data.expires_at = os.time() - 3600
-			local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
-			if cde ~= 200 then return false, cde, nil, 'Incorrect response code ' .. cde .. ' expect 200' end
-			-- Succeed, set token details
-			auth_data.refresh_token = body.refresh_token
-			auth_data.access_token = body.access_token
-			auth_data.token_type = body.token_type
-			auth_data.expires_at = os.time() + body.expires_in - 10
-			-- Save credentials to perm storage
-			_store_credentials()
-			return res, cde, nil, msg
+			refresh_token = auth_data.refresh_token
 		else
 			-- Full authenticate is needed.
-			log.Debug("Full authentication user UID/PWD required.")
-			-- Clear current values
-			auth_data.access_token = nil
-			auth_data.refresh_token = nil
-			auth_data.expires_at = os.time() - 3600
-			
-			-- Generate new logon request codes. Works with any challange code for now.
-			local code_verifier = utils.urandom(86)
---			local code_challenge = utils.rstrip(mime.b64(utils.sha256(code_verifier)), "=")
-			local code_challenge = utils.urandom(86)
-			local state = utils.urandom(12)
-		
-			-- Get landing page
-			local params = {
-				{"client_id", "ownerapi"},
-				{"code_challenge", code_challenge},
-				{"code_challenge_method", "S256"},
-				{"redirect_uri", "https://" .. auth_host .. "/void/callback"},
-				{"response_type", "code"},
-				{"scope", "openid email offline_access"},
-				{"login_hint", auth_data.email},	-- V2.7
-				{"state", state}
-			}
-			local res, cde, body, msg, hdrs = _tesla_https_request({method="GET", host=auth_host, url="/oauth2/v3/authorize", params=params})
-			-- Request does not always return the page we need. p3p header looks like good indicator.
-			if cde ~= 200 or hdrs["p3p"] then return false, cde, nil, msg end
-			-- Collect known hidden input fields from form.
-			local inputs = {}
-			local form = match(body,'<form method="post" id="form" class="sso%-form sign%-in%-form">(.+)</form>')
---			if not form then  form = match(body,'<form method="post" id="form">(.+)</form>') end
-			for str in gmatch(form,'<input type="hidden" name=(.-) />') do
-				local key, val = match(str, '"(.-)" value="(.+)"')
-				if key and val then
-					if val:sub(1,1) == '"' then val = "" end
-					inputs[key] = val
-				end	
-			end
-			log.Debug('_csrf from landing page : %s', inputs._csrf)
-			log.Debug('_phase from landing page : %s', inputs._phase)
-			log.Debug('transaction_id from landing page : %s', inputs.transaction_id)
-
-			-- Do logon
-			local headers = {
-				["Content-Type"] = "application/x-www-form-urlencoded"
-			}
-			local data = {
-				{"identity", auth_data.email},
-				{"credential", auth_data.password}
-			}
-			-- Add hidden form inputs from landing page
-			for key, val in pairs(inputs) do
-				table_insert(data, {key, val})
-			end
-			local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/authorize", data=data, params=params, headers=headers})
-			if cde == 200 then
-				-- See if Multi Factor is on. Not supporting for now.
-				if match(body, "/mfa/verify") then
-					return false, cde, nil, "Multi Factor Authentication is not supported."
-				else
-					return false, cde, nil, "Retry"
-				end
-			end	
-			if cde == 302 or hdrs["location"] then 
-				local loc_code = extract_url_parameters(hdrs["location"],"code")
-				if not loc_code or loc_code == "" then return false, cde, nil, 'No loc_code found' end
-				log.Debug("location code : %s" , loc_code)			
-
-				-- Get OAuth tokens
-				data = {
-					grant_type = "authorization_code",
-					client_id = "ownerapi",
-					code_verifier = code_verifier,
-					code = {loc_code},
-					redirect_uri = "https://auth.tesla.com/void/callback"
-				}
-				local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
-				if cde ~= 200 then return false, cde, nil, msg end
-				-- Succeed, set token details
-				auth_data.refresh_token = body.refresh_token
-				auth_data.access_token = body.access_token
-				auth_data.token_type = body.token_type
-				auth_data.expires_at = os.time() + body.expires_in - 10
-				-- Save credentials to perm storage
-				_store_credentials()
-				return res, cde, nil, msg
+			log.Debug("Full authentication, initial token required.")
+			if auth_data.initial_token ~= "" then
+				-- We have a refresh token, so use that.
+				log.Debug("Initial Token availble to authenticate.")
+				refresh_token = auth_data.initial_token
 			else
-				return false, cde, nil, msg
+				return false, 404, nil, "Initial Token missing for authenticaiton"
 			end
 		end
---[[ not getting here anymore. Step obsolete as of 21 March 2022
-		-- Get API tokens.
-		local headers = { ["Authorization"] = auth_data.token_type.." "..auth_data.access_token }
-		data = {
-			grant_type = "urn:ietf:params:oauth:grant-type:jwt-bearer",
-			client_id = auth_data.client_id,
-			client_secret = auth_data.client_secret
+		local data = {
+			grant_type = "refresh_token",
+			client_id = "ownerapi",
+			refresh_token = refresh_token,
+			scope = "openid email offline_access"
 		}
+		-- Clear current values
 		auth_data.access_token = nil
-		auth_data.expires_at = os.time() - 3600
-		local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=base_host, url="/oauth/token", data=data, headers=headers})
+		auth_data.refresh_token = nil
+		auth_data.expires_at = os.time() - 600
+		local res, cde, body, msg, hdrs = _tesla_https_request({method="POST", host=auth_host, url="/oauth2/v3/token", data=data})
 		if cde ~= 200 then return false, cde, nil, 'Incorrect response code ' .. cde .. ' expect 200' end
-		if body.token_type then
-			auth_data.access_token = body.access_token
-			auth_data.token_type = body.token_type
-			auth_data.expires_at = body.created_at + body.expires_in - 86400  -- 1 day margin in 45 days token expiration
-			-- Save credentials to perm storage
-			_store_credentials()
-			return res, cde, nil, msg
-		else
-			return false, cde, nil, 'Incorrect token response: '..(body.response or "non-JSON reply")
-		end
-		]]
---
+		-- Succeed, set token details
+		auth_data.refresh_token = body.refresh_token
+		auth_data.access_token = body.access_token
+		auth_data.token_type = body.token_type
+		auth_data.expires_at = os.time() + body.expires_in - 10
+		-- Save credentials to perm storage
+		_store_credentials()
+		return res, cde, nil, msg
 	end
 	
 	-- Send a command to the API.
@@ -1337,7 +1248,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		local res, cde, data, msg = _send_command("listCars")
 		if res then
 			if data.count then
-log.Debug("GetVehicle got %d cars.", data.count)				
+				log.Debug("GetVehicle got %d cars.", data.count)				
 				if data.count > 0 then
 					local idx = 1
 					if data.count > 1 then
@@ -1352,10 +1263,10 @@ log.Debug("GetVehicle got %d cars.", data.count)
 						end
 					end
 					local resp = data.response[idx]
-log.Debug("will use car #%d, %s",idx, json.encode(resp))						
+					log.Debug("will use car #%d, %s",idx, resp.id_s)						
 					-- Set the corect URL for vehicle requests
 					vehicle_url = api_url .. "/" .. resp.id_s .. "/"
-log.Debug("Car URL to use %s.",vehicle_url)						
+--log.Debug("Car URL to use %s.",vehicle_url)						
 					return true, cde, resp, msg
 				else
 					return false, 404, nil, "No vehicles found."
@@ -1586,9 +1497,8 @@ log.Debug("Car URL to use %s.",vehicle_url)
 	end
 
 	-- Initialize API functions 
-	local function _init(email, password, token_storage_handler, vin, vera_clnt)
-		auth_data.email = email
-		auth_data.password = password
+	local function _init(initial_token, token_storage_handler, vin, vera_clnt)
+		auth_data.initial_token = initial_token
 		auth_data.vin = vin
 		auth_data.token_storage_handler = token_storage_handler
 		vera_client = vera_clnt or false
@@ -1696,6 +1606,7 @@ function TeslaCarModule()
 
 	-- Logoff, This will fore a new login
 	local function _reset()
+		log.Log("Resetting connection")
 		readyToPoll = false
 		TeslaCar.Logoff()
 		_set_status_message()
@@ -1703,13 +1614,30 @@ function TeslaCarModule()
 	end
 	
 	local function _login()
-		-- Get login details
-		local email = var.GetString("Email")
-		local password = var.GetString("Password")
+		-- Get login details stored
+		local initial_token = var.GetString("InitialToken")
 		-- If VIN is set look for car with that VIN, else first found is used.
 		local vin = var.GetString("VIN")
-		if email ~= "" and password ~= "" then
-			TeslaCar.Initialize(email, password, _credentials_storage, vin, not pD.onOpenLuup)
+		-- See if current tokens are still valid, if so we can use as initial token when that is not entered.
+		if initial_token == "" then
+			local cred = var.GetJson("Credentials")
+			if cred and cred.expires_at and cred.refresh_token then
+				local tte = os.difftime(cred.expires_at, os.time())
+				log.Debug("Login: we have stored credentials %d seconds to expire.", tte)
+				if (tte > 600) then
+					log.Debug("Login: Using refresh token from stored credentials.")
+					initial_token = cred.refresh_token
+				else
+					-- Tokens expired, erase.
+					log.Debug("Login: Existing credentials expired, wipe em.")
+					var.SetJson("Credentials", {})
+				end
+			else
+				log.Debug("Login: No existing credentials.")
+			end
+		end
+		if initial_token ~= "" then
+			TeslaCar.Initialize(initial_token, _credentials_storage, vin, not pD.onOpenLuup)
 			local res, cde, data, msg = TeslaCar.Authenticate(var.GetBoolean("ForcedLogon"))
 			if res then
 				var.SetNumber("LastLogin", os.time())
@@ -1722,18 +1650,24 @@ function TeslaCarModule()
 					else
 						var.Set("IconSet", ICONS.IDLE)
 					end
+					-- Wipe initial token after use. 
+					var.SetString("InitialToken", "")
 					return true, 200, data, msg
 				else	
 					log.Error("Unable to select vehicle. errorCode : %d, errorMessage : %s", cde, msg)
 					return false, cde, nil, msg
 				end
 			else
+				if cde <= 500 then 
+					-- Wipe initial token after use. Error below 500 suggest invalid token.
+					var.SetString("InitialToken", "")
+				end
 				log.Error("Unable to login. errorCode : %d, errorMessage : %s", cde, msg)
-				return false, cde, nil, "Login to TeslaCar Portal failed "..msg
+				return false, cde, nil, "Login failed "..msg
 			end
 		else
-			log.Warning("Configuration not complete, missing email and/or password")
-			return false, 404, nil, "Plug-in setup not complete", "Missing email and/or password, please complete setup."
+			log.Warning("A new initial token is required.")
+			return false, 404, nil, "Require Initial Token, please enter in Settings."
 		end
 	end
 	
@@ -2385,8 +2319,7 @@ function TeslaCarModule()
 		-- Create variables we will need from get-go
 		local prv_ver = var.Get("Version")
 		var.Set("Version", pD.Version)
-		var.Default("Email")
-		var.Default("Password") --store in attribute
+		var.Default("InitialToken")
 		var.Default("IconSet",ICONS.UNCONFIGURED)
 		var.Default("PollSettings", "1,20,15,5,1,5") --Daily Poll (1=Y,0=N), Interval for; Idle, Charging long, Charging Short, Active, Moving in minutes
 		var.Default("DailyPollTime","7:30")
@@ -2479,6 +2412,9 @@ function TeslaCarModule()
 		var.Default("CarHasMotorizedChargePort", 0)
 		var.Default("CarCanActuateTrunks", 0)
 		var.Default("CarCanActuateWindows", 0)
+		-- V3.0, no longer needed, so wipe for security.
+		var.Set("Email","")
+		var.Set("Password","")
 		
 		_G.TeslaCarModule_poll = _poll
 		_G.TeslaCarModule_daily_poll = _daily_poll
@@ -2642,9 +2578,9 @@ function TeslaCar_DeferredInitialize(retry)
 	local retry = tonumber(retry) or 0
 	if retry ~= 0 then
 		-- Wipe any message from previous attempts
-		log.DeviceMessage(pD.DEV, -2, 0, pD.pwdMessage)
-		log.DeviceMessage(pD.DEV, -2, 0, pD.retryLoginMessage)
-		log.DeviceMessage(pD.DEV, -2, 0, pD.failedLoginMessage)
+--		log.DeviceMessage(pD.DEV, -2, 0, pD.pwdMessage)
+--		log.DeviceMessage(pD.DEV, -2, 0, pD.retryLoginMessage)
+--		log.DeviceMessage(pD.DEV, -2, 0, pD.failedLoginMessage)
 		log.Log("TeslaCar_DeferredInitialize start. Retry # : %d", retry)
 	else	
 		log.Log("TeslaCar_DeferredInitialize start.")
@@ -2655,30 +2591,34 @@ function TeslaCar_DeferredInitialize(retry)
 		-- Start pollers
 		CarModule.DailyPoll(true)
 		CarModule.ScheduledPoll(true)
+		log.Log("TeslaCar_DeferredInitialize finished ")
+		return true
 	elseif cde == 404 then
-		log.DeviceMessage(pD.DEV, 2, 0, pD.pwdMessage)
-		-- UID and/or Pwd missing. Wait for setup complete.
+--		log.DeviceMessage(pD.DEV, 2, 0, pD.pwdMessage)
+		-- Initial Token missing or wrong. Wait for setup complete.
 		-- Start pollers
-		CarModule.DailyPoll(true)
-		CarModule.ScheduledPoll(true)
+--		CarModule.DailyPoll(true)
+--		CarModule.ScheduledPoll(true)
+		var.Set("DisplayLine2",msg, SIDS.ALTUI)
+		return false
 	else
-		-- Login error, retry in 5 secs.
+		-- Other Login error, retry in 5 secs.
 		if retry < 4 then
-			log.DeviceMessage(pD.DEV, 1, 0, pD.retryLoginMessage)
+--			log.DeviceMessage(pD.DEV, 1, 0, pD.retryLoginMessage)
 			luup.call_delay("TeslaCar_DeferredInitialize", 5, retry + 1)
+			return false
 		else
 			-- Too many retries.
 			log.Error("Could not login to Tesla API after 5 attempts.")
-			log.DeviceMessage(pD.DEV, 2, 0, pD.failedLoginMessage)
+--			log.DeviceMessage(pD.DEV, 2, 0, pD.failedLoginMessage)
+			var.Set("DisplayLine2","Login failed, enter new Initial Token.", SIDS.ALTUI)
+			return false
 		end
 	end
 
-	log.Log("TeslaCar_DeferredInitialize finished ")
 end
 
--- Handle changes in some key configuration variables.
--- Change in log level.
--- Changes in email or password for Telsa account.
+-- Handle changes in initial token for Telsa account.
 function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_value_old, lul_value_new)
 	local strNewVal = (lul_value_new or "")
 	local strOldVal = (lul_value_old or "")
@@ -2686,23 +2626,18 @@ function TeslaCar_VariableChanged(lul_device, lul_service, lul_variable, lul_val
 	local lDevID = tonumber(lul_device or "0")
 	log.Log("TeslaCar_VariableChanged Device " .. lDevID .. " " .. strVariable .. " changed from " .. strOldVal .. " to " .. strNewVal .. ".")
 
-	if (strVariable == "VIN") then
-	elseif (strVariable == "Email") then
-		log.Debug("resetting TeslaCar connection...")
-		CarModule.Reset()
-		local pwd = var.Get("Password")
-		if strVariable ~= "" and pwd ~= "" then
-			TeslaCar_DeferredInitialize(1)
-			CarModule.Poll()
+	if (strVariable == "InitialToken") then
+		-- When initial token value is provided, connect and poll car for current status.
+		if strNewVal ~= "" then
+			log.Debug("Initial Token set, resetting TeslaCar connection...")
+			CarModule.Reset()
+			var.SetBoolean("ForcedLogon", true)
+			if TeslaCar_DeferredInitialize(1) then
+				CarModule.Poll()
+			end	
 		end
-	elseif (strVariable == "Password") then
-		log.Debug("resetting TeslaCar connection...")
-		CarModule.Reset()
-		local em = var.Get("Email")
-		if strVariable ~= "" and em ~= "" then
-			TeslaCar_DeferredInitialize(1)
-			CarModule.Poll()
-		end
+	else
+		log.Debug("Initial Token erased after use.")
 	end
 end
 
@@ -2736,6 +2671,7 @@ function TeslaCarModule_Initialize(lul_device)
 	TeslaCar = TeslaCarAPI()
 	CarModule = TeslaCarModule()
 	CarModule.Initialize()
+	var.Set("DisplayLine2","Initializing...", SIDS.ALTUI)
 
 	-- Create child devices
 	TeslaCar_CreateChilderen(var.GetAttribute("disabled"))
@@ -2750,12 +2686,11 @@ function TeslaCarModule_Initialize(lul_device)
 	end	
 	CarModule.UpdateChildren()
 
-	-- Defer last bits of initialization for 15 seconds.
+	-- Defer last bits of initialization for 10 seconds.
 	luup.call_delay("TeslaCar_DeferredInitialize", 10, "0")
 
-	-- Set watches on email and password as userURL needs to be erased when changed
-	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Email", pD.DEV)
-	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "Password", pD.DEV)
+	-- Set watches on Initial Token. When entered, use to refresh tokens.
+	luup.variable_watch("TeslaCar_VariableChanged", SIDS.MODULE, "InitialToken", pD.DEV)
 
 	log.Log("TeslaCarModule_Initialize finished ")
 	utils.SetLuupFailure(0, pD.DEV)
