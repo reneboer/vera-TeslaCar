@@ -3,7 +3,7 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V3.0, 1 May 2023
+	V3.3, 26 June 2023
 	
 	A valid Tesla account registration is required with OWNER or DRIVER access type.
 	
@@ -16,11 +16,18 @@
 	
 	Form these copy the refresh token into the Initial Token setting. The Initial token will be erased after login.
 	
-	V3.0 Changges:
+	V3.3 Changes:
+		- Added tyre pressure status.
+	V3.2 Changes:
+		- Car name field changed in vehicle_data response.
+	V3.1 Changes:
+		- Email and password will only be erased when existing.
+		- Extra checks on retreving JSON variables for wrong types. (can be issue with Credentials)
+	V3.0 Changes:
 		- Use of initial token rather than email and password for authentication. Email and password will be erased for security.
 	V2.8 Changges:
 		- Fix to old LuaSec version detection.
-	V2.7 Changges:
+	V2.7 Changes:
 		- Updates for changed token handling by Tesla from March 21, 2022.
 	V2.6 Changes:
 		- Changed user agent to standard one.
@@ -151,7 +158,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "3.0",
+	Version = "3.3",
 	DEV = nil,
 	LogLevel = 1,
 	LogFile = "/tmp/TeslaCar.log",
@@ -353,6 +360,7 @@ local ICONS = {
 	DOORS = 7,
 	WINDOWS = 8,
 	MOVING = 9,
+	TYRES = 10,
 	SENTRY = 11,
 	BUSY = 12,
 	UNCONFIGURED = -1
@@ -417,6 +425,10 @@ local function varAPI()
 		end
 		local res, msg = json.decode(value)
 		if res then 
+			if type(res) ~= "table" then
+				luup.log("var.GetJson: wrong data type ("..type(value)..") for variable "..(name or "unknown"), 2)
+				return {}
+			end	
 			return res
 		else
 			luup.log("var.GetJson: failed to decode json ("..(value or "")..") for variable "..(name or "unknown"), 2)
@@ -1091,7 +1103,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			end
 			headers["Content-Length"] = cl
 		
---log.Debug("HttpsRequest method %s, url %s", params.method, url)		
+log.Debug("HttpsRequest method %s, url %s", params.method, url)		
 			for key, val in pairs(headers) do
 --log.Debug("Send header %s %s",key,val)
 			end
@@ -1125,7 +1137,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 				if zlib and string.find(enc, "gzip") then
 					result = zlib.inflate()(result)
 				end	
---log.Debug("Body :"..result)
+log.Debug("Body :"..(result or "empty body"))
 				if cde == 200 then
 					if hdrs["content-type"] == "application/json" or hdrs["content-type"] == "application/json; charset=utf-8" then
 						return true, cde, json.decode(result), "OK", hdrs
@@ -1146,7 +1158,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 	local function _retrieve_credentials()
 		if auth_data.token_storage_handler then
 			local cred = auth_data.token_storage_handler("GET")
-			if cred then
+			if cred and cred ~= {} then
 				auth_data.access_token = cred.access_token
 				auth_data.refresh_token = cred.refresh_token
 				auth_data.token_type = cred.token_type
@@ -1784,6 +1796,44 @@ function TeslaCarModule()
 		else	
 			var.Set("WindowsMessage", "Closed")
 		end
+		txt = json.decode(var.Get("TyrePressureStatus"))
+		if txt.fl then
+			local tm = "Front Left  : " .. txt.fl.p
+			if txt.fl.sw then
+				tm = tm .. "<color='red'> Too soft</color>"
+			elseif txt.fl.hw then
+				tm = tm .. "<color='red'> Too hard</color>"
+			end
+			tm = tm .. "<br>"
+			tm = tm .. "Front Right : " .. txt.fr.p
+			if txt.fr.sw then
+				tm = tm .. "<color='red'> Too soft</color>"
+			elseif txt.fr.hw then
+				tm = tm .. "<color='red'> Too hard</color>"
+			end
+			tm = tm .. "<br>"
+			tm = tm .. "Rear Left   : " .. txt.rl.p
+			if txt.rl.sw then
+				tm = tm .. "<color='red'> Too soft</color>"
+			elseif txt.rl.hw then
+				tm = tm .. "<color='red'> Too hard</color>"
+			end
+			tm = tm .. "<br>"
+			tm = tm .. "Rear Right  : " .. txt.rr.p
+			if txt.rr.sw then
+				tm = tm .. "<color='red'> Too soft</color>"
+			elseif txt.rr.hw then
+				tm = tm .. "<color='red'> Too hard</color>"
+			end
+			tm = tm .. "<br>"
+			var.Set("TyrePressureMessage", tm)
+			if txt.fl.sw or txt.fl.sw or txt.fr.sw or txt.fr.sw or txt.rl.sw or txt.rl.sw or txt.rr.sw or txt.rr.sw then
+				var.Set("DisplayLine2", "One or more tyres too hard/soft.", SIDS.ALTUI)
+				icon = ICONS.TYRES
+			end	
+		else	
+			var.Set("TyrePressureMessage", "Unknown")
+		end
 		if var.GetBoolean("FrunkStatus") then
 			var.Set("FrunkMessage", "Unlocked.")
 			var.Set("DisplayLine2", "Frunk is unlocked.", SIDS.ALTUI)
@@ -2010,6 +2060,10 @@ function TeslaCarModule()
 			if state.sentry_mode_available then
 				var.SetBoolean("SentryMode", state.sentry_mode)
 			end
+			-- Tyre Pressure info
+			if state.tpms_pressure_fl then
+				var.SetString("TyrePressureStatus", json.encode({fl = {p = state.tpms_pressure_fl, hw = state.tpms_hard_warning_fl, sw = state.tpms_soft_warning_fl}, fr = {p = state.tpms_pressure_fr, hw = state.tpms_hard_warning_fr, sw = state.tpms_soft_warning_fr},rl = {p = state.tpms_pressure_rl, hw = state.tpms_hard_warning_rl, sw = state.tpms_soft_warning_rl},rr = {p = state.tpms_pressure_rr, hw = state.tpms_hard_warning_rr, sw = state.tpms_soft_warning_rr}}))
+			end
 			return true
 		else
 			log.Warning("Update: No vehicle state found")
@@ -2029,13 +2083,19 @@ function TeslaCarModule()
 					-- successful reply on command
 					-- update with latest vehicle
 					-- Update car config data when Car name or VIN has changed
-					local cur_name = var.GetString("CarName")
-					local cur_vin = var.GetString("VIN")
-					if cur_name ~= resp.display_name or cur_vin ~= resp.vin then
-						var.SetString("CarName", resp.display_name)
-						var.Set("DisplayLine1","Car : "..resp.display_name, SIDS.ALTUI)
-						var.SetString("VIN", resp.vin)
-						_update_vehicle_config(resp.vehicle_config)
+					-- Getting empty display_name changed to vehicle_state.vehicle_name
+					local new_name = resp.display_name or resp.vehicle_state.vehicle_name
+					if (new_name or resp.vehicle_state.vehicle_name) and resp.vin then
+						local cur_name = var.GetString("CarName")
+						local cur_vin = var.GetString("VIN")
+						if cur_name ~= new_name or cur_vin ~= resp.vin then
+							var.SetString("CarName", new_name)
+							var.Set("DisplayLine1","Car : "..new_name, SIDS.ALTUI)
+							var.SetString("VIN", resp.vin)
+							_update_vehicle_config(resp.vehicle_config)
+						end
+					else
+						log.Warning("Get vehicle details missing display_name / VIN. Display name %s, VIN %s.", new_name or " no name", resp.vin, "no VIN")
 					end	
 					-- Process specific category states
 					_update_gui_settings(resp.gui_settings)
@@ -2326,7 +2386,7 @@ function TeslaCarModule()
 		var.Default("MonitorAwakeInterval",60) -- Interval to check is car is awake, in seconds
 		var.Default("LastCarMessageTimestamp", 0)
 		var.Default("LocationHome",0)
-		-- Need to wipe car name for update to V1.10 config handling so fileds like car type are set.
+		-- Need to wipe car name for update to V1.10 config handling so fields like car type are set.
 		local car_type = var.Default("CarType")
 		if car_type == "" and prv_ver ~= pD.Version then
 			var.Set("CarName", "") 
@@ -2339,12 +2399,14 @@ function TeslaCarModule()
 		var.Default("WindowMeltMessage")
 		var.Default("DoorsMessage", "Closed")
 		var.Default("WindowsMessage", "Closed")
+		var.Default("TyrePressureMessage", "Unknow")
 		var.Default("FrunkMessage", "Locked")
 		var.Default("TrunkMessage", "Locked")
 		var.Default("LockedMessage", "Locked")
 		var.Default("SoftwareMessage")
 		var.Default("LockedStatus", 1)
 		var.Default("DoorsStatus", 0)
+		var.Default("TyrePressureStatus", 0)
 		var.Default("WindowsStatus", 0)
 		var.Default("SunroofStatus", 0)
 		var.Default("LightsStatus", 0)
@@ -2413,8 +2475,8 @@ function TeslaCarModule()
 		var.Default("CarCanActuateTrunks", 0)
 		var.Default("CarCanActuateWindows", 0)
 		-- V3.0, no longer needed, so wipe for security.
-		var.Set("Email","")
-		var.Set("Password","")
+		if var.Get("Email") ~= "" then var.Set("Email","") end
+		if var.Get("Password") ~= "" then var.Set("Password","") end
 		
 		_G.TeslaCarModule_poll = _poll
 		_G.TeslaCarModule_daily_poll = _daily_poll
