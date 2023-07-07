@@ -4,7 +4,7 @@
 // V3.3 26 June 2023
 //
 // V3.3 Changes:
-//		Added tyre pressure status.
+//		Added tire pressure status.
 // V3.0 Changes:
 //		Use of initial token rather than email and password for authentication.
 // V2.3 Changes:
@@ -199,7 +199,7 @@ var TeslaCar = (function (api) {
 					'<tr><td>Doors Status </td><td>'+drs+'</td></tr>'+
 					'<tr><td>Trunk/Frunk Status </td><td>'+trs+'/'+frs+'</td></tr>'+
 					'<tr><td>Windows Status </td><td>'+wins+'</td></tr>'+
-					'<tr><td valign="top">Tyre Pressure Status </td><td>'+tpms+'</td></tr>'+
+					'<tr><td valign="top">Tire Pressure Status </td><td>'+tpms+'</td></tr>'+
 					'<tr><td>Sentry Mode </td><td>'+(smd==='1'?'Active':'Inactive')+'</td></tr>'+
 					'<tr><td>&nbsp;&nbsp; </td><td> </td></tr>'+
 					'<tr><td>In Service</td><td>'+(srvs==='0'?'Not in service':'In service, ETC : '+srve)+'</td></tr>'+

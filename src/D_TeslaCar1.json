@@ -83,14 +83,6 @@
 			"value": 9
 		}]
 	}, {
-		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Tyres.png",
-		"conditions": [{
-			"service": "urn:rboer-com:serviceId:TeslaCar1",
-			"variable": "IconSet",
-			"operator": "==",
-			"value": 10
-		}]
-	}, {
 		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Asleep.png",
 		"conditions": [{
 			"service": "urn:rboer-com:serviceId:TeslaCar1",
@@ -113,6 +105,14 @@
 			"variable": "IconSet",
 			"operator": "==",
 			"value": 12
+		}]
+	}, {
+		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Tyres.png",
+		"conditions": [{
+			"service": "urn:rboer-com:serviceId:TeslaCar1",
+			"variable": "IconSet",
+			"operator": "==",
+			"value": 13
 		}]
 	}, {
 		"img": "https://raw.githubusercontent.com/reneboer/vera-TeslaCar/master/icons/TeslaCar_Unconf.png",

@@ -3,7 +3,7 @@
 	Module L_TeslaCar1.lua
 	
 	Written by R.Boer. 
-	V3.3, 26 June 2023
+	V3.4, 7 July 2023
 	
 	A valid Tesla account registration is required with OWNER or DRIVER access type.
 	
@@ -16,8 +16,11 @@
 	
 	Form these copy the refresh token into the Initial Token setting. The Initial token will be erased after login.
 	
+	V3.4 Changes:
+		- Had to add -k parameter to old Vera curl command due to stricter certificate settings on Tesla API servers.
+		- Fix for tire pressure status.
 	V3.3 Changes:
-		- Added tyre pressure status.
+		- Added tire pressure status.
 	V3.2 Changes:
 		- Car name field changed in vehicle_data response.
 	V3.1 Changes:
@@ -158,7 +161,7 @@ local SIDS = {
 }
 
 local pD = {
-	Version = "3.3",
+	Version = "3.4",
 	DEV = nil,
 	LogLevel = 1,
 	LogFile = "/tmp/TeslaCar.log",
@@ -350,7 +353,6 @@ local childIDMap = {}
 -- Maps to icons definition in D_TeslaCar1.json for IconSet variable.
 local ICONS = {
 	IDLE = 0,
-	ASLEEP = 10,
 	CONNECTED = 1,
 	CHARGING = 2,
 	CLIMATE = 3,
@@ -360,9 +362,10 @@ local ICONS = {
 	DOORS = 7,
 	WINDOWS = 8,
 	MOVING = 9,
-	TYRES = 10,
+	ASLEEP = 10,
 	SENTRY = 11,
 	BUSY = 12,
+	TIRES = 13,
 	UNCONFIGURED = -1
 }
 
@@ -1056,8 +1059,9 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 		local httpsVersion = string.sub(https._VERSION,1,3)	-- Handle versions like 1.0.1 as 1.0
 		log.Debug("LuaSec version found %s",https._VERSION)
 		if (tonumber(httpsVersion) < 0.8) and host==base_host then
-			log.Debug("Old LuaSec version detected, using cURL for https request")
-			local cmdStr = 'curl -s -X '..params.method
+			log.Info("Old LuaSec version detected, using cURL for https request")
+log.Debug("cURL method %s, url %s", params.method, url)		
+			local cmdStr = 'curl -k -s -X '..params.method
 			-- Add headers
 			for key, val in pairs(headers) do
 				local lkey = slower(key)
@@ -1078,7 +1082,7 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			if handle then
 				local response = handle:read('*a')
 				handle:close()
---log.Debug("cURL command response %s", response)
+log.Debug("cURL command response %s", response)
 				-- These are all json commands, check for expected response 
 				if sub(response,1,1) == "{" then
 					return true, 200, json.decode(response), "OK", nil
@@ -1103,10 +1107,10 @@ local unpack, table_insert, table_concat, byte, char, string_rep, sub, gsub, mat
 			end
 			headers["Content-Length"] = cl
 		
-log.Debug("HttpsRequest method %s, url %s", params.method, url)		
-			for key, val in pairs(headers) do
---log.Debug("Send header %s %s",key,val)
-			end
+			log.Debug("HttpsRequest method %s, url %s", params.method, url)		
+--			for key, val in pairs(headers) do
+--				log.Debug("Send header %s %s",key,val)
+--			end
 			http.TIMEOUT = TCS_HTTP_TIMEOUT
 			local bdy,cde,hdrs,stts = https.request{
 				url = url, 
@@ -1798,38 +1802,47 @@ function TeslaCarModule()
 		end
 		txt = json.decode(var.Get("TyrePressureStatus"))
 		if txt.fl then
+			local tpErr = false
 			local tm = "Front Left  : " .. txt.fl.p
 			if txt.fl.sw then
 				tm = tm .. "<color='red'> Too soft</color>"
+				tpErr = true
 			elseif txt.fl.hw then
 				tm = tm .. "<color='red'> Too hard</color>"
+				tpErr = true
 			end
 			tm = tm .. "<br>"
 			tm = tm .. "Front Right : " .. txt.fr.p
 			if txt.fr.sw then
 				tm = tm .. "<color='red'> Too soft</color>"
+				tpErr = true
 			elseif txt.fr.hw then
 				tm = tm .. "<color='red'> Too hard</color>"
+				tpErr = true
 			end
 			tm = tm .. "<br>"
 			tm = tm .. "Rear Left   : " .. txt.rl.p
 			if txt.rl.sw then
 				tm = tm .. "<color='red'> Too soft</color>"
+				tpErr = true
 			elseif txt.rl.hw then
 				tm = tm .. "<color='red'> Too hard</color>"
+				tpErr = true
 			end
 			tm = tm .. "<br>"
 			tm = tm .. "Rear Right  : " .. txt.rr.p
 			if txt.rr.sw then
 				tm = tm .. "<color='red'> Too soft</color>"
+				tpErr = true
 			elseif txt.rr.hw then
 				tm = tm .. "<color='red'> Too hard</color>"
+				tpErr = true
 			end
 			tm = tm .. "<br>"
 			var.Set("TyrePressureMessage", tm)
-			if txt.fl.sw or txt.fl.sw or txt.fr.sw or txt.fr.sw or txt.rl.sw or txt.rl.sw or txt.rr.sw or txt.rr.sw then
-				var.Set("DisplayLine2", "One or more tyres too hard/soft.", SIDS.ALTUI)
-				icon = ICONS.TYRES
+			if tpErr then
+				var.Set("DisplayLine2", "One or more tires too hard/soft.", SIDS.ALTUI)
+				icon = ICONS.TIRES
 			end	
 		else	
 			var.Set("TyrePressureMessage", "Unknown")
@@ -2060,7 +2073,7 @@ function TeslaCarModule()
 			if state.sentry_mode_available then
 				var.SetBoolean("SentryMode", state.sentry_mode)
 			end
-			-- Tyre Pressure info
+			-- Tire Pressure info
 			if state.tpms_pressure_fl then
 				var.SetString("TyrePressureStatus", json.encode({fl = {p = state.tpms_pressure_fl, hw = state.tpms_hard_warning_fl, sw = state.tpms_soft_warning_fl}, fr = {p = state.tpms_pressure_fr, hw = state.tpms_hard_warning_fr, sw = state.tpms_soft_warning_fr},rl = {p = state.tpms_pressure_rl, hw = state.tpms_hard_warning_rl, sw = state.tpms_soft_warning_rl},rr = {p = state.tpms_pressure_rr, hw = state.tpms_hard_warning_rr, sw = state.tpms_soft_warning_rr}}))
 			end

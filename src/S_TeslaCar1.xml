@@ -2,7 +2,7 @@
 <!-- 
  S_TeslaCar1.xml Vera/openLuup "TeslaCar" Plug-in
  Written by Rene Boer
- V2.1 16 February 2021
+ V3.4 7 July 2023
 -->
 <scpd xmlns="urn:schemas-upnp-org:service-1-0">
 	<specVersion>
@@ -98,6 +98,18 @@
 			<sendEventsAttribute>yes</sendEventsAttribute>
 			<dataType>boolean</dataType>
 			<shortCode>ClimateStatus</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>TyrePressureMessage</name>
+			<sendEventsAttribute>no</sendEventsAttribute>
+			<dataType>string</dataType>
+			<shortCode>TyrePressureMessage</shortCode>
+		</stateVariable>
+		<stateVariable>
+			<name>TyrePressureStatus</name>
+			<sendEventsAttribute>yes</sendEventsAttribute>
+			<dataType>boolean</dataType>
+			<shortCode>TyrePressureStatus</shortCode>
 		</stateVariable>
 		<stateVariable>
 			<name>DoorsStatus</name>
