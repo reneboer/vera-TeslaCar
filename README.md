@@ -1,3 +1,6 @@
+# Tesla API will stop in 2024, so will this plugin!
+Tesla is stopping the current Rest API this plugin is based on this means this plugin will stop working in the course of this year. As I no longer own a Tesla there is nothing I can do to keep this working. You can find some discussion on possible alternatives here https://github.com/alandtse/tesla/issues/743.
+
 # vera-TeslaCar
 Vera plugin for Vera and openLuup to control your Tesla with same commands as the mobile app, like Charging control, open/close locks, doors, windows, etc.
 
